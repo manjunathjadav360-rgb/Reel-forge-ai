@@ -77,17 +77,25 @@ function drawSilhouette(t){
 }
 function drawScene(t,index,energy){
  const scene=scenes[index%scenes.length];
- if(footage&&footage.readyState>=2&&footage.videoWidth){const sw=footage.videoWidth,sh=footage.videoHeight,scale=Math.max(W/sw,H/sh),dw=sw*scale,dh=sh*scale;ctx.drawImage(footage,(W-dw)/2,(H-dh)/2,dw,dh);ctx.fillStyle="rgba(10,20,18,.42)";ctx.fillRect(0,0,W,H);}
- else{
+ if(footage&&footage.readyState>=2&&footage.videoWidth){
+  const sw=footage.videoWidth,sh=footage.videoHeight,scale=Math.max(W/sw,H/sh),dw=sw*scale,dh=sh*scale;
+  ctx.drawImage(footage,(W-dw)/2,(H-dh)/2,dw,dh);ctx.fillStyle="rgba(10,20,18,.42)";ctx.fillRect(0,0,W,H);
+ }else{
   gradientBackground(t,index);
-  if(scene==="horizon"){drawMountains(t,energy);drawSilhouette(t);}
-  if(scene==="city")drawCity(t,energy);
-  if(scene==="stars")drawStars(t,energy);
-  if(scene==="ocean")drawOcean(t,energy);
-  if(scene==="light")drawLight(t,energy);
-  if(scene==="finale"){drawMountains(t,energy);drawStars(t,energy);}
-  if(style==="dream"){drawStars(t,energy);drawLight(t,energy);}
-  if(style==="pulse")drawPulse(t,energy);
+  if(style==="type"){
+   ctx.save();ctx.strokeStyle="rgba(47,65,53,.16)";ctx.lineWidth=2;
+   for(let i=0;i<9;i++){ctx.beginPath();ctx.arc(W*.72,H*.34,35+i*34+Math.sin(t*.16+i)*8,0,Math.PI*2);ctx.stroke();}
+   ctx.fillStyle="rgba(85,106,83,.12)";ctx.beginPath();ctx.ellipse(W*.72,H*.34,170+energy*28,230+energy*28,-.2,0,Math.PI*2);ctx.fill();ctx.restore();
+  }else{
+   if(scene==="horizon"){drawMountains(t,energy);drawSilhouette(t);}
+   if(scene==="city")drawCity(t,energy);
+   if(scene==="stars")drawStars(t,energy);
+   if(scene==="ocean")drawOcean(t,energy);
+   if(scene==="light")drawLight(t,energy);
+   if(scene==="finale"){drawMountains(t,energy);drawStars(t,energy);}
+   if(style==="dream"){drawStars(t,energy);drawLight(t,energy);}
+   if(style==="pulse")drawPulse(t,energy);
+  }
  }
 }
 function wrapText(text,maxChars){const words=text.trim().split(/\s+/);const lines=[];let line="";for(const word of words){if((line+" "+word).trim().length>maxChars&&line){lines.push(line);line=word;}else line=(line+" "+word).trim();}if(line)lines.push(line);return lines.slice(0,3);}
