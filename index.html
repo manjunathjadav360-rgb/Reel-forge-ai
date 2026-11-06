@@ -25,6 +25,8 @@
 </div>
 <div class="section-heading second-heading"><div><span class="step">03</span><h2>Make it yours</h2></div><span class="muted">Optional</span></div>
 <label class="field-label" for="captionInput">Main title</label><input id="captionInput" class="text-input" maxlength="54" placeholder="e.g. Kaise Hain Naina">
+<label class="field-label lyrics-label" for="lyricsInput">Song lyrics <span>Paste lyrics · each line becomes a timed scene</span></label><textarea id="lyricsInput" class="lyrics-input" rows="5" maxlength="5000" placeholder="Paste your song lyrics here, one line at a time…"></textarea>
+<p class="lyrics-hint">ReelForge will sequence your lines across the 60-second video and choose visual moods from the words. Lyrics are not automatically transcribed from audio.</p>
 <label class="field-label video-label" for="videoFile">Your own footage <span>Optional · MP4 / MOV / WebM</span></label><label class="video-upload" for="videoFile"><span>＋</span><span id="videoName">Add a video to blend into your edit</span><input id="videoFile" type="file" accept="video/*"></label>
 <p class="fine-print">No footage? ReelForge builds a moving visual world from animated scenes, light, texture and music-reactive motion. Your files stay on your device.</p>
 </div>
@@ -38,5 +40,5 @@
 </aside></section>
 <footer><span>REELFORGE STUDIO</span><span>Sound first. Story always.</span></footer>
 </main>
-<dialog id="aboutDialog"><div class="dialog-inner"><button class="dialog-close" id="closeDialog" aria-label="Close">×</button><p class="eyebrow">REELFORGE · FIRST RELEASE</p><h2>Made to move<br><em>with your music.</em></h2><p>This build creates a full 60-second animated music video with multiple visual scenes, transitions, typography and audio-reactive motion. You can blend in your own footage. It renders locally in your browser and exports WebM. It does not pretend to generate AI camera footage or transcribe lyrics; those require external AI services and are not silently simulated.</p><button class="dialog-ok" id="okDialog">Back to studio</button></div></dialog>
+<dialog id="aboutDialog"><div class="dialog-inner"><button class="dialog-close" id="closeDialog" aria-label="Close">×</button><p class="eyebrow">REELFORGE · FIRST RELEASE</p><h2>Made to move<br><em>with your music.</em></h2>This build creates a 60-second vertical music video with animated scenes, transitions, audio-reactive motion and optional lyric-synced text. Paste lyrics to sequence each line and guide visual moods. You can blend in your own footage. It renders locally and exports WebM. It does not automatically transcribe audio or generate AI live-action footage.<button class="dialog-ok" id="okDialog">Back to studio</button></div></dialog>
 <script src="app.js"></script></body></html>
