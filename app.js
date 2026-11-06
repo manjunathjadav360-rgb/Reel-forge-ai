@@ -5,7 +5,8 @@ const audioInput=$("audioFile"),videoInput=$("videoFile"),audio=$("audioPlayer")
 const audioName=$("audioName"),audioMeta=$("audioMeta"),audioDetails=$("audioDetails"),durationLabel=$("durationLabel"),videoName=$("videoName");
 const playBtn=$("playBtn"),exportBtn=$("exportBtn"),empty=$("previewEmpty"),note=$("previewNote"),caption=$("captionInput");
 const progressWrap=$("progressWrap"),progressBar=$("progressBar"),progressText=$("progressText"),about=$("aboutDialog");
-const W=canvas.width,H=canvas.height,VIDEO_SECONDS=60,FPS=30;
+const W=540,H=960,VIDEO_SECONDS=60,FPS=30;
+ctx.scale(canvas.width/W,canvas.height/H);
 let audioUrl=null,videoUrl=null,footage=null,style="cinematic",audioContext=null,source=null,analyser=null,recordDestination=null,frequencyData=null;
 let raf=0,recording=false,renderStart=0,renderTimer=null,activeStream=null,recorder=null,lastExportUrl=null;
 const palettes={cinematic:["#101e1b","#3f5c51","#b99d7e"],type:["#e9e4d8","#c6bdab","#536353"],dream:["#172b35","#617b83","#b8a4a1"],pulse:["#111c20","#2b5d59","#b5c69a"]};
@@ -78,8 +79,8 @@ function drawSilhouette(t){
 function drawScene(t,index,energy){
  const scene=scenes[index%scenes.length];
  if(footage&&footage.readyState>=2&&footage.videoWidth){
-  const sw=footage.videoWidth,sh=footage.videoHeight,scale=Math.max(W/sw,H/sh),dw=sw*scale,dh=sh*scale;
-  ctx.drawImage(footage,(W-dw)/2,(H-dh)/2,dw,dh);ctx.fillStyle="rgba(10,20,18,.42)";ctx.fillRect(0,0,W,H);
+  const sw=footage.videoWidth,sh=footage.videoHeight,zoom=1.025+((t%10)/10)*.055,scale=Math.max(W/sw,H/sh)*zoom,dw=sw*scale,dh=sh*scale,pan=Math.sin(t*.22)*10;
+  ctx.drawImage(footage,(W-dw)/2+pan,(H-dh)/2,dw,dh);ctx.fillStyle="rgba(10,20,18,.42)";ctx.fillRect(0,0,W,H);
  }else{
   gradientBackground(t,index);
   if(style==="type"){
@@ -194,7 +195,7 @@ exportBtn.addEventListener("click",async()=>{
    if(activeStream)activeStream.getTracks().forEach(track=>track.stop());activeStream=null;
    if(!chunks.length){setStatus("No video data was received. Try again.");exportBtn.disabled=false;return;}
    const blob=new Blob(chunks,{type:"video/webm"});if(lastExportUrl)URL.revokeObjectURL(lastExportUrl);lastExportUrl=URL.createObjectURL(blob);
-   const a=document.createElement("a");a.href=lastExportUrl;a.download="ReelForge-60s-Music-Video.webm";document.body.appendChild(a);a.click();a.remove();
+   const a=document.createElement("a");a.href=lastExportUrl;a.download=((caption.value.trim().replace(/[^a-z0-9]+/gi,"-").replace(/^-|-$/g,"").slice(0,32)||"ReelForge") + "-60s.webm");document.body.appendChild(a);a.click();a.remove();
    progressBar.style.width="100%";progressText.textContent="Done · 60-second video downloaded";setStatus("Your 60-second video is ready");
    exportBtn.disabled=false;exportBtn.innerHTML="<span>Create another video</span><span>↗</span>";stopVisuals();
   };
