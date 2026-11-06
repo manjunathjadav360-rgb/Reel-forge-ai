@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const audioInput=$("audioFile"),videoInput=$("videoFile"),audio=$("audioPlayer"),canvas=$("previewCanvas"),ctx=canvas.getContext("2d",{alpha:false});
 const audioName=$("audioName"),audioMeta=$("audioMeta"),audioDetails=$("audioDetails"),durationLabel=$("durationLabel"),videoName=$("videoName");
-const playBtn=$("playBtn"),exportBtn=$("exportBtn"),empty=$("previewEmpty"),note=$("previewNote"),caption=$("captionInput");
+const playBtn=$("playBtn"),exportBtn=$("exportBtn"),empty=$("previewEmpty"),note=$("previewNote"),caption=$("captionInput"),lyricsInput=$("lyricsInput");
 const progressWrap=$("progressWrap"),progressBar=$("progressBar"),progressText=$("progressText"),about=$("aboutDialog");
 const W=540,H=960,VIDEO_SECONDS=60,FPS=30;
 ctx.scale(canvas.width/W,canvas.height/H);
@@ -100,6 +100,33 @@ function drawScene(t,index,energy){
  }
 }
 function wrapText(text,maxChars){const words=text.trim().split(/\s+/);const lines=[];let line="";for(const word of words){if((line+" "+word).trim().length>maxChars&&line){lines.push(line);line=word;}else line=(line+" "+word).trim();}if(line)lines.push(line);return lines.slice(0,3);}
+function lyricLines(){return lyricsInput.value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean).slice(0,60)}
+function lyricAt(t){
+ const lines=lyricLines();if(!lines.length)return null;
+ const slot=Math.min(lines.length-1,Math.floor(clamp(t/VIDEO_SECONDS,0,.9999)*lines.length));
+ return {text:lines[slot],index:slot,total:lines.length};
+}
+function lyricScene(text){
+ const s=text.toLowerCase();
+ if(/love|heart|kiss|eyes|naina|romance|miss|darling|jaan|ishq|pyaar|beloved/.test(s))return "stars";
+ if(/night|moon|stars|dream|sleep|raat|chaand|khwaab|midnight/.test(s))return "stars";
+ if(/dance|party|beat|move|fire|crazy|energy|naach|dhun/.test(s))return "city";
+ if(/rain|tears|cry|ocean|sea|waves|baarish|ansu|samundar/.test(s))return "ocean";
+ if(/city|street|road|lights|safar|journey|travel|highway/.test(s))return "city";
+ if(/light|shine|glow|sun|morning|hope|roshni|subah/.test(s))return "light";
+ return "horizon";
+}
+function drawLyricOverlay(t){
+ const item=lyricAt(t);if(!item)return;
+ const text=item.text.length>58?item.text.slice(0,55)+"…":item.text;
+ const fade=Math.min(1,(t%Math.max(.5,VIDEO_SECONDS/item.total))/.22,((VIDEO_SECONDS/item.total)-(t%Math.max(.5,VIDEO_SECONDS/item.total)))/.18);
+ ctx.save();ctx.globalAlpha=clamp(fade,.0,1);
+ ctx.fillStyle="rgba(8,16,14,.48)";ctx.fillRect(28,H*.69,W-56,112);
+ ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillStyle="#fff";
+ ctx.font="600 30px 'DM Sans',sans-serif";
+ const words=wrapText(text,28);words.forEach((line,i)=>ctx.fillText(line,W/2,H*.745+i*38,470));
+ ctx.restore();
+}
 function drawTypography(t,energy,index,transition){
  const title=caption.value.trim()||"A feeling in motion";
  const sceneWords=["LET THE MOMENT","STAY A LITTLE","SOMEWHERE IN TIME","FEEL EVERYTHING","LOST IN THE LIGHT","AND THEN, US"];
@@ -132,10 +159,14 @@ function drawWave(t,energy){
 function drawFrame(seconds=0){
  const t=Math.max(0,seconds),index=Math.min(5,Math.floor(t/10)),local=(t%10)/10,transition=local<.12?(1-local/.12):0;
  const energy=readEnergy();
- drawScene(t,index,energy);
- if(transition>0&&index>0){ctx.save();ctx.globalAlpha=transition*.72;drawScene(t,index-1,energy);ctx.restore();}
+ const lyric=lyricAt(t);
+ const sceneName=lyric?lyricScene(lyric.text):null;
+ const visualIndex=sceneName?scenes.indexOf(sceneName):index;
+ drawScene(t,visualIndex<0?index:visualIndex,energy);
+ if(transition>0&&index>0){ctx.save();ctx.globalAlpha=transition*.42;drawScene(t,index-1,energy);ctx.restore();}
  if(style!=="pulse")drawTypography(t,energy,index,transition);
  else {ctx.fillStyle="rgba(255,255,255,.88)";ctx.font="700 46px 'DM Sans',sans-serif";ctx.fillText((caption.value.trim()||"FEEL THE MUSIC").toUpperCase().slice(0,18),48,H*.75);}
+ if(lyric)drawLyricOverlay(t);
  if(style==="cinematic"||style==="dream"){ctx.save();ctx.globalAlpha=.055;ctx.fillStyle="#fff";for(let i=0;i<180;i++){const x=(i*83.17)%W,y=(i*137.31)%H;ctx.fillRect(x,y,1,1);}ctx.restore();}
  drawWave(t,energy);
 }
@@ -171,6 +202,7 @@ videoInput.addEventListener("change",()=>{
 audio.addEventListener("error",()=>{playBtn.disabled=true;exportBtn.disabled=true;setStatus("Could not read this audio file. Try MP3, WAV or M4A.");});
 $("styleGrid").addEventListener("click",e=>{const b=e.target.closest("[data-style]");if(!b)return;style=b.dataset.style;document.querySelectorAll(".style-card").forEach(el=>el.classList.toggle("selected",el===b));drawFrame(audio.currentTime||0);});
 caption.addEventListener("input",()=>drawFrame(audio.currentTime||0));
+lyricsInput.addEventListener("input",()=>{drawFrame(audio.currentTime||0);setStatus(lyricLines().length+" lyric lines ready · timed across 60 seconds");});
 playBtn.addEventListener("click",async()=>{
  if(!audio.src)return;
  try{await setupAudioGraph();if(audio.paused){if(Number.isFinite(audio.duration)&&audio.currentTime>=audio.duration)audio.currentTime=0;await audio.play();playBtn.innerHTML="Ⅱ <span>Pause</span>";setStatus("Playing · "+clock(audio.currentTime));startVisuals();}else{audio.pause();playBtn.innerHTML="▶ <span>Preview</span>";setStatus("Preview paused");stopVisuals();}}
