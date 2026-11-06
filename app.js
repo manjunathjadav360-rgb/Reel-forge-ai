@@ -127,7 +127,7 @@ function drawFrame(seconds=0){
  if(transition>0&&index>0){ctx.save();ctx.globalAlpha=transition*.72;drawScene(t,index-1,energy);ctx.restore();}
  if(style!=="pulse")drawTypography(t,energy,index,transition);
  else {ctx.fillStyle="rgba(255,255,255,.88)";ctx.font="700 46px 'DM Sans',sans-serif";ctx.fillText((caption.value.trim()||"FEEL THE MUSIC").toUpperCase().slice(0,18),48,H*.75);}
- if(style==="cinematic"||style==="dream"){const grain=ctx.createImageData(W,H);for(let i=0;i<grain.data.length;i+=4){const v=Math.random()*16;grain.data[i]=255;grain.data[i+1]=255;grain.data[i+2]=255;grain.data[i+3]=v;}ctx.putImageData(grain,0,0);}
+ if(style==="cinematic"||style==="dream"){ctx.save();ctx.globalAlpha=.055;ctx.fillStyle="#fff";for(let i=0;i<180;i++){const x=(i*83.17)%W,y=(i*137.31)%H;ctx.fillRect(x,y,1,1);}ctx.restore();}
  drawWave(t,energy);
 }
 function readEnergy(){if(!analyser||!frequencyData)return .18;analyser.getByteFrequencyData(frequencyData);let sum=0;for(let i=2;i<Math.min(44,frequencyData.length);i++)sum+=frequencyData[i];return clamp(sum/(Math.min(44,frequencyData.length)-2)/255*2.2);}
