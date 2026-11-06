@@ -4,3 +4,5 @@
 .lyrics-label{margin-top:18px}.lyrics-label span{font-weight:400;color:#96988f;margin-left:5px;font-size:9px}.lyrics-input{display:block;width:100%;min-height:112px;resize:vertical;border:1px solid var(--line);border-radius:7px;background:rgba(255,255,255,.55);padding:11px 12px;font:12px/1.55 "DM Sans",sans-serif;color:var(--ink);outline:none}.lyrics-input:focus{border-color:#84957a;background:#fff}.lyrics-hint{font-size:9px;line-height:1.55;color:#92958b;margin:7px 0 0}
 
 .ai-panel{border:1px solid var(--line);border-radius:9px;padding:14px;background:#fff9;margin:10px 0 18px}.ai-panel .field-label{margin-top:0}.ai-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}.ai-button{border:0;border-radius:6px;background:var(--deep);color:#fff;padding:11px 14px;font:600 11px "DM Sans";cursor:pointer}.ai-button:disabled{opacity:.45;cursor:not-allowed}.ai-actions span,.ai-hint{font-size:9px;color:#8a8e83}.ai-hint{line-height:1.5;margin:9px 0 0}
+
+.prompt-input{margin-bottom:8px}
