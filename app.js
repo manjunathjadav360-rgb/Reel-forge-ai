@@ -186,16 +186,25 @@ function setupAudioGraph(){
  source.connect(analyser);analyser.connect(audioContext.destination);source.connect(recordDestination);
  return audioContext.resume();
 }
-audioInput.addEventListener("change",()=>{
- const file=audioInput.files?.[0];if(!file)return;
- if(!file.type.startsWith("audio/")){setStatus("Choose a valid audio file");return;}
- if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(file);audio.src=audioUrl;audio.load();
- audioName.textContent=file.name;audioMeta.textContent=(file.size/1048576).toFixed(1)+" MB · Loaded locally";audioDetails.hidden=false;
+function loadSoundtrack(file){
+ if(audioUrl)URL.revokeObjectURL(audioUrl);
+ audioUrl=URL.createObjectURL(file);audio.src=audioUrl;audio.load();
+ audioName.textContent=file.name;audioMeta.textContent=(file.size/1048576).toFixed(1)+" MB · "+(file.type.startsWith("video/")?"video soundtrack loaded":"audio loaded")+" locally";audioDetails.hidden=false;
  audio.addEventListener("loadedmetadata",()=>{
-  if(!Number.isFinite(audio.duration)||audio.duration<=0){setStatus("This audio file has no usable duration");return;}
+  if(!Number.isFinite(audio.duration)||audio.duration<=0){setStatus("Could not read the soundtrack duration");return;}
   durationLabel.textContent=clock(audio.duration);setStatus("Ready · "+clock(audio.duration)+" soundtrack");playBtn.disabled=false;exportBtn.disabled=false;drawFrame(0);
  },{once:true});
  empty.hidden=true;playBtn.disabled=true;exportBtn.disabled=true;autoCreateBtn.disabled=false;progressWrap.hidden=true;startVisuals();
+}
+audioInput.addEventListener("change",()=>{
+ const file=audioInput.files?.[0];if(!file)return;
+ if(!file.type.startsWith("audio/")&&!file.type.startsWith("video/")){setStatus("Choose an audio or video file");return;}
+ if(file.type.startsWith("video/")){
+  cleanupVideo();videoUrl=URL.createObjectURL(file);footage=document.createElement("video");footage.src=videoUrl;footage.muted=true;footage.loop=true;footage.playsInline=true;footage.preload="auto";
+  footage.addEventListener("loadeddata",()=>{footage.currentTime=0;drawFrame(0);},{once:true});footage.play().catch(()=>{});
+  videoName.textContent=file.name+" · original footage";
+ }else{cleanupVideo();videoName.textContent="Add optional footage to your edit";}
+ loadSoundtrack(file);
 });
 videoInput.addEventListener("change",()=>{
  const file=videoInput.files?.[0];if(!file)return;if(!file.type.startsWith("video/")){setStatus("Choose a valid video file");return;}
@@ -225,8 +234,8 @@ autoCreateBtn.addEventListener("click",async()=>{
  try{
   const data=await fileToBase64(mediaFile);
   const suppliedLyrics=lyricsInput.value.trim();
-  const direction=creativePrompt.value.trim()||"Use your best creative judgement and make an engaging music video.";
-  const prompt="You are a professional music-video director. Analyse the attached "+(mediaFile.type.startsWith("video/")?"video and its soundtrack":"song audio")+". User creative direction: "+direction+". User-provided lyrics (if any; treat as authoritative): "+(suppliedLyrics||"None supplied; transcribe audible lyrics accurately if possible, otherwise return an empty lyrics array. Never invent lyrics.")+". Return only JSON with keys title, mood, style, lyrics, scenes. mood is a short label. style is one of cinematic,type,dream,pulse. scenes is 4 to 10 objects covering 0-60 seconds with numeric start/end, scene from horizon,city,stars,ocean,light,finale, and short caption. Create a coherent visual story following the meaning and emotional progression of lyrics, musical energy and the user's direction. Never fabricate lyrics.";
+  const direction=creativePrompt.value.trim()||"Use your best creative judgement and make an engaging music video. Preserve and creatively edit the uploaded source footage when it is a video.";
+  const prompt="You are a professional music-video director and editor. Analyse the attached "+(mediaFile.type.startsWith("video/")?"original song video, its soundtrack, visual content and scene changes":"song audio")+". If a source video is provided, treat its footage as the primary visual material: select, crop, reframe, pace and enhance its moments to fit the music instead of replacing the entire video with generic backgrounds. User creative direction: "+direction+". User-provided lyrics (if any; treat as authoritative): "+(suppliedLyrics||"None supplied; transcribe audible lyrics accurately if possible, otherwise return an empty lyrics array. Never invent lyrics.")+". Return only JSON with keys title, mood, style, lyrics, scenes. mood is a short label. style is one of cinematic,type,dream,pulse. scenes is 4 to 10 objects covering 0-60 seconds with numeric start/end, scene from horizon,city,stars,ocean,light,finale, and short caption. Create a coherent visual story following the meaning and emotional progression of lyrics, musical energy and the user's direction. Never fabricate lyrics.";
   const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:mediaFile.type||"audio/mpeg",data}}]}],generationConfig:{temperature:0.35,responseMimeType:"application/json"}})});
   const body=await res.json();if(!res.ok)throw new Error(body.error?.message||"AI request failed");
   const answer=body.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"",plan=parseAIJson(answer);
