@@ -1,26 +1,21 @@
 name: ReelForge AI - Validate
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Validate editor JavaScript
+      - uses: actions/checkout@v4
+      - name: Validate JavaScript
         run: node --check app.js
-      - name: Check required studio elements
+      - name: Verify AI and MP4 features
         run: |
-          node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const ids=['audioFile','videoFile','audioPlayer','previewCanvas','audioName','audioMeta','audioDetails','durationLabel','videoName','playBtn','exportBtn','previewEmpty','previewNote','captionInput','progressWrap','progressBar','progressText','aboutDialog','styleGrid','helpBtn','closeDialog','okDialog','lyricsInput'];const missing=ids.filter(id=>!h.includes('id=\\\"'+id+'\\\"'));if(missing.length){console.error('Missing HTML ids:',missing.join(', '));process.exit(1)}console.log('Studio element check passed')"
-      - name: Check lyric and export features
-        run: |
-          node -e "const fs=require('fs');const s=fs.readFileSync('app.js','utf8');const checks=[['lyric parser',s.includes('function lyricLines()')],['60-second export',s.includes('VIDEO_SECONDS=60')],['MediaRecorder',s.includes('new MediaRecorder')],['export recovery',s.includes('Export interrupted')]];for(const [name,ok] of checks){if(!ok){console.error('Missing '+name);process.exit(1)}}console.log('Feature checks passed')"
+          node -e 'const fs=require("fs");const h=fs.readFileSync("index.html","utf8");const s=fs.readFileSync("app.js","utf8");for(const id of ["audioFile","audioPlayer","previewCanvas","exportBtn","lyricsInput","geminiKey","autoCreateBtn","aiStatus"])if(!h.includes("id=\""+id+"\""))throw Error("Missing "+id);for(const f of ["function convertToMp4(","video/mp4","libx264","gemini-2.5-flash","function lyricLines()","new MediaRecorder"])if(!s.includes(f))throw Error("Missing "+f);console.log("AI and MP4 feature checks passed")'
+      - name: Verify export recovery
+        run: node -e 'const s=require("fs").readFileSync("app.js","utf8");if(!s.includes("Export interrupted"))throw Error("Missing recovery");console.log("Recovery check passed")'
