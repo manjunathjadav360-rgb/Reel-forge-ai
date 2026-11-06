@@ -100,7 +100,7 @@ function drawScene(t,index,energy){
  }
 }
 function wrapText(text,maxChars){const words=text.trim().split(/\s+/);const lines=[];let line="";for(const word of words){if((line+" "+word).trim().length>maxChars&&line){lines.push(line);line=word;}else line=(line+" "+word).trim();}if(line)lines.push(line);return lines.slice(0,3);}
-function lyricLines(){return lyricsInput.value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean).slice(0,60)}
+function lyricLines(){return lyricsInput.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).slice(0,60)}
 function lyricAt(t){
  const lines=lyricLines();if(!lines.length)return null;
  const slot=Math.min(lines.length-1,Math.floor(clamp(t/VIDEO_SECONDS,0,.9999)*lines.length));
@@ -171,7 +171,7 @@ function drawFrame(seconds=0){
  drawWave(t,energy);
 }
 function readEnergy(){if(!analyser||!frequencyData)return .18;analyser.getByteFrequencyData(frequencyData);let sum=0;for(let i=2;i<Math.min(44,frequencyData.length);i++)sum+=frequencyData[i];return clamp(sum/(Math.min(44,frequencyData.length)-2)/255*2.2);}
-function tick(){if(!audio.paused||recording){drawFrame(audio.currentTime||((performance.now()-renderStart)/1000));raf=requestAnimationFrame(tick);}else{raf=0;drawFrame(audio.currentTime||0);}}
+function tick(){if(!audio.paused||recording){const visualTime=recording?(performance.now()-renderStart)/1000:(audio.currentTime||0);drawFrame(visualTime);raf=requestAnimationFrame(tick);}else{raf=0;drawFrame(audio.currentTime||0);}}
 function startVisuals(){if(!raf){renderStart=performance.now();raf=requestAnimationFrame(tick);}}
 function stopVisuals(){if(raf){cancelAnimationFrame(raf);raf=0;}drawFrame(audio.currentTime||0);}
 function setStatus(text){note.textContent=text;}
