@@ -225,7 +225,7 @@ exportBtn.addEventListener("click",async()=>{
   if(!mime)throw new Error("This browser cannot encode WebM. Try current Chrome.");
   recorder=new MediaRecorder(activeStream,{mimeType:mime,videoBitsPerSecond:4500000,audioBitsPerSecond:160000});
   recorder.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
-  recorder.onerror=()=>{recording=false;setStatus("Export interrupted. Try again.");exportBtn.disabled=false;};
+  recorder.onerror=()=>{recording=false;clearTimeout(renderTimer);renderTimer=null;chunks.length=0;audio.pause();audio.loop=false;if(activeStream)activeStream.getTracks().forEach(track=>track.stop());activeStream=null;setStatus("Export interrupted. Check available phone storage and try again.");exportBtn.disabled=false;exportBtn.innerHTML="<span>Try export again</span><span>↗</span>";progressText.textContent="Export interrupted";};
   recorder.onstop=()=>{
    recording=false;clearTimeout(renderTimer);renderTimer=null;audio.pause();audio.loop=false;playBtn.innerHTML="▶ <span>Preview</span>";
    if(activeStream)activeStream.getTracks().forEach(track=>track.stop());activeStream=null;
