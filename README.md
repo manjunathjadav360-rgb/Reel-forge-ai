@@ -1,31 +1,31 @@
 # ReelForge AI
 
-A phone-first, audio-led video creation studio. Start with a sound, choose a visual direction, add an optional opening line or your own footage, then create a synchronized vertical video.
+A phone-first music-video studio. Add a soundtrack, choose a visual direction, add an optional title or your own footage, and create a 60-second vertical music video.
 
-## Current build
+## Included in this release
 
-The first browser MVP includes:
-- Audio file selection and local preview (MP3, WAV, M4A supported by the browser)
-- Four visual directions: Cinematic, Typography, Dreamscape, and Minimal
-- Editable opening text
-- Optional user-supplied background footage
-- 9:16 animated canvas composition
-- Synchronized audio + video export as WebM using the browser's MediaRecorder API
-- Responsive layout for phones and desktop
-- Local-only processing in this build; files are not uploaded
+- Local audio selection and playback
+- Four visual directions: Cinematic, Typography, Dreamscape and Pulse
+- Six automatically sequenced visual scenes with transitions
+- Moving landscapes, city lights, stars, ocean textures, silhouettes and atmospheric light
+- Audio-reactive motion and waveform accents using the live audio analyser
+- Optional user footage with subtle camera movement and cinematic overlay
+- Custom title treatment
+- Exact 60-second render: longer songs are cut at 60 seconds; shorter songs loop to fill the cut
+- 720 × 1280 vertical video export with synchronized audio as WebM
+- Responsive phone-first interface
+- Local browser processing; selected files are not uploaded
 
-## Run it
+## Run and deploy
 
-Open `index.html` through a local static web server or GitHub Pages. For the most reliable export, use a recent version of Chrome. Keep the tab open while the video is rendering.
+Open `index.html` through GitHub Pages or a local static web server. For export, use a recent Chrome browser and keep the tab open while the 60-second render completes.
 
-## Enable GitHub Pages
-
-In the repository, open **Settings → Pages** and set the build/deployment source to **GitHub Actions**. The included workflow deploys the site on every push to `main`.
+To enable deployment, open **Settings → Pages → Build and deployment → Source → GitHub Actions**. The included workflow deploys changes pushed to `main`.
 
 ## Honest capability boundary
 
-This MVP does **not** yet generate new AI footage, transcribe lyrics, detect musical beats, or automatically understand a song's mood. It makes a real animated video composition and synchronizes the selected audio. AI scene generation and deeper audio analysis will be added through separate provider modules when suitable services and credentials are available. No paid provider or unlimited free generation is assumed.
+This release creates an actual animated music-video composition, not AI-generated live-action footage. It does not yet transcribe lyrics or identify semantic story beats. Audio-reactive motion responds to the live frequency spectrum; it is not advertised as precise beat detection. No paid AI service or unlimited free generation is assumed.
 
-## Project direction
+## Next architecture layer
 
-The longer-term goal is an audio-aware editing assistant that can plan scenes, typography, pacing, transitions, and visual treatments across cinematic, animated, storytelling, and social formats. Provider integrations will remain modular so the app can use available free options without locking the project to one service.
+AI lyric transcription, mood/story planning and generated-scene providers can be connected as independent services without changing the local renderer. Provider integrations will be added only when credentials, terms and usable free quotas are available.
