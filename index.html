@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f5f4ef">
+<title>ReelForge AI — Make something people feel.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap" rel="stylesheet"><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar"><a class="brand" href="#"><span class="brand-mark">r.</span><span>reelforge</span><span class="brand-ai">AI</span></a><div class="top-actions"><span class="status-dot"></span><span class="status-label">Studio preview</span><button class="icon-button" id="helpBtn" aria-label="About">?</button></div></header>
+<main class="shell">
+<section class="intro"><p class="eyebrow">YOUR SOUND, YOUR STORY</p><h1>Make something<br><em>people feel.</em></h1><p class="intro-copy">Start with a sound. Build a visual story around it.</p></section>
+<section class="workspace">
+<div class="editor-column">
+<div class="section-heading"><div><span class="step">01</span><h2>Bring your sound</h2></div><span class="muted">MP3 · WAV · M4A</span></div>
+<label class="upload-card" id="audioDrop" for="audioFile"><input id="audioFile" type="file" accept="audio/*"><span class="upload-icon">↗</span><span class="upload-title" id="audioName">Choose an audio file</span><span class="upload-sub" id="audioMeta">Tap to browse your device</span></label><audio id="audioPlayer" controls hidden></audio>
+<div class="section-heading second-heading"><div><span class="step">02</span><h2>Choose a direction</h2></div><span class="muted">Change anytime</span></div>
+<div class="style-grid" id="styleGrid">
+<button class="style-card selected" data-style="cinematic"><span class="style-preview cinematic-preview"><i></i><b></b></span><span class="style-name">Cinematic</span><span class="style-desc">Atmosphere & emotion</span></button>
+<button class="style-card" data-style="type"><span class="style-preview type-preview">FEEL<br>EVERY<br>BEAT.</span><span class="style-name">Typography</span><span class="style-desc">Words in motion</span></button>
+<button class="style-card" data-style="dream"><span class="style-preview dream-preview"><i></i><i></i><i></i></span><span class="style-name">Dreamscape</span><span class="style-desc">Soft, surreal visuals</span></button>
+<button class="style-card" data-style="minimal"><span class="style-preview minimal-preview"><i></i><b>STAY</b></span><span class="style-name">Minimal</span><span class="style-desc">Clean & intentional</span></button>
+</div>
+<div class="section-heading second-heading"><div><span class="step">03</span><h2>Give it a feeling</h2></div><span class="muted">Optional</span></div>
+<label class="field-label" for="captionInput">Opening line</label><input id="captionInput" class="text-input" maxlength="70" placeholder="e.g. Some moments stay with us...">
+<label class="field-label video-label" for="videoFile">Background footage <span>Optional · MP4 / MOV</span></label><label class="video-upload" for="videoFile"><span>＋</span><span id="videoName">Add your own footage</span><input id="videoFile" type="file" accept="video/*"></label>
+<p class="fine-print">Your files stay in this browser during this preview. Nothing is uploaded to a server.</p>
+</div>
+<aside class="preview-column">
+<div class="preview-head"><div><span class="step">PREVIEW</span><h2>Your canvas</h2></div><span class="ratio-pill">9:16</span></div>
+<div class="preview-frame"><canvas id="previewCanvas" width="540" height="960" aria-label="Video preview"></canvas><div class="preview-overlay" id="previewOverlay"><span class="preview-kicker">YOUR STORY STARTS HERE</span><span class="preview-big">A feeling<br><em>in motion.</em></span><span class="preview-bottom">REELFORGE STUDIO</span></div><div class="preview-empty" id="previewEmpty"><span>✳</span><p>Your preview will appear here</p><small>Add a sound to begin</small></div></div>
+<div class="preview-controls"><button class="play-button" id="playBtn" disabled>▶ <span>Preview</span></button><span class="preview-note" id="previewNote">Waiting for audio</span></div>
+<button class="export-button" id="exportBtn" disabled><span>Make my video</span><span>↗</span></button>
+<div class="progress-wrap" id="progressWrap" hidden><div class="progress-track"><i id="progressBar"></i></div><span id="progressText">Preparing your video…</span></div>
+<p class="export-note">First build exports a real synchronized <b>WebM</b> video. MP4 and AI-generated footage providers are planned next.</p>
+</aside></section>
+<footer><span>REELFORGE AI</span><span>Made for the moments that matter.</span></footer>
+</main>
+<dialog id="aboutDialog"><div class="dialog-inner"><button class="dialog-close" id="closeDialog" aria-label="Close">×</button><p class="eyebrow">A NOTE ON THIS BUILD</p><h2>Honest tools.<br><em>Real output.</em></h2><p>This first working build creates an animated vertical video, syncs your selected audio, and exports a playable WebM file. It does not yet generate AI footage, understand lyrics, or perform automatic beat detection. Those capabilities need real model integrations and will be added as separate modules.</p><button class="dialog-ok" id="okDialog">Got it</button></div></dialog>
+<script src="app.js"></script></body></html>
