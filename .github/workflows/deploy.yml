@@ -23,6 +23,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate editor JavaScript
+        run: node --check app.js
+      - name: Check required studio elements
+        run: |
+          node -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const j=fs.readFileSync('app.js','utf8');const ids=[...j.matchAll(/\\$\\(\\\"([^\\\"]+)\\\"\\)/g)].map(x=>x[1]);const missing=[...new Set(ids)].filter(id=>!h.includes('id=\\\"'+id+'\\\"'));if(missing.length){console.error('Missing HTML ids:',missing.join(', '));process.exit(1)}console.log('Studio element check passed')"
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
