@@ -16,14 +16,16 @@
 <label class="upload-card" for="audioFile" id="audioDrop"><input id="audioFile" type="file" accept="audio/*"><span class="upload-icon">↗</span><span class="upload-title" id="audioName">Choose your song</span><span class="upload-sub" id="audioMeta">Select audio from your device</span></label>
 <audio id="audioPlayer" preload="metadata"></audio>
 <div class="audio-details" id="audioDetails" hidden><span id="durationLabel">0:00</span><span class="audio-detail-note">Your track will be trimmed or looped to 60 seconds</span></div>
-<div class="section-heading second-heading"><div><span class="step">02</span><h2>Visual direction</h2></div><span class="muted">Pick the mood</span></div>
+<div class="section-heading second-heading"><div><span class="step">02</span><h2>AI auto-create</h2></div><span class="muted">Automatic song analysis</span></div>
+<div class="ai-panel"><label class="field-label" for="geminiKey">Gemini API key <span>Free-tier key</span></label><input id="geminiKey" class="text-input" type="password" autocomplete="off" placeholder="Paste your Gemini API key"><div class="ai-actions"><button id="autoCreateBtn" class="ai-button" type="button" disabled>✦ Analyse song & build video</button><span id="aiStatus">Upload a song to begin</span></div><p class="ai-hint">AI transcribes supported audio, detects mood and builds a timed visual plan. The key is used directly in this browser session.</p></div>
+<div class="section-heading second-heading"><div><span class="step">03</span><h2>Visual direction</h2></div><span class="muted">Optional · AI selects this</span></div>
 <div class="style-grid" id="styleGrid">
 <button class="style-card selected" data-style="cinematic"><span class="style-preview cinematic-preview"><i></i><b></b></span><span class="style-name">Cinematic</span><span class="style-desc">Film-like atmosphere</span></button>
 <button class="style-card" data-style="type"><span class="style-preview type-preview">FEEL<br>EVERY<br>BEAT.</span><span class="style-name">Typography</span><span class="style-desc">Words in motion</span></button>
 <button class="style-card" data-style="dream"><span class="style-preview dream-preview"><i></i><i></i><i></i></span><span class="style-name">Dreamscape</span><span class="style-desc">Soft & surreal</span></button>
 <button class="style-card" data-style="pulse"><span class="style-preview pulse-preview"><i></i><i></i><i></i><i></i></span><span class="style-name">Pulse</span><span class="style-desc">Rhythm & energy</span></button>
 </div>
-<div class="section-heading second-heading"><div><span class="step">03</span><h2>Make it yours</h2></div><span class="muted">Optional</span></div>
+<div class="section-heading second-heading"><div><span class="step">04</span><h2>Make it yours</h2></div><span class="muted">Optional</span></div>
 <label class="field-label" for="captionInput">Main title</label><input id="captionInput" class="text-input" maxlength="54" placeholder="e.g. Kaise Hain Naina">
 <label class="field-label lyrics-label" for="lyricsInput">Song lyrics <span>Paste lyrics · each line becomes a timed scene</span></label><textarea id="lyricsInput" class="lyrics-input" rows="5" maxlength="5000" placeholder="Paste your song lyrics here, one line at a time…"></textarea>
 <p class="lyrics-hint">ReelForge will sequence your lines across the 60-second video and choose visual moods from the words. Lyrics are not automatically transcribed from audio.</p>
@@ -36,9 +38,9 @@
 <div class="preview-controls"><button class="play-button" id="playBtn" disabled>▶ <span>Preview</span></button><span class="preview-note" id="previewNote">Waiting for soundtrack</span></div>
 <button class="export-button" id="exportBtn" disabled><span>Create 60-second video</span><span>↗</span></button>
 <div class="progress-wrap" id="progressWrap" hidden><div class="progress-track"><i id="progressBar"></i></div><span id="progressText">Preparing your video…</span></div>
-<p class="export-note">Exports a 720 × 1280 vertical video with synchronized audio as WebM. Best opened in Chrome.</p>
+<p class="export-note">Exports a vertical MP4 with synchronized audio. Rendering runs on your device; keep Chrome open until it finishes.</p>
 </aside></section>
 <footer><span>REELFORGE STUDIO</span><span>Sound first. Story always.</span></footer>
 </main>
-<dialog id="aboutDialog"><div class="dialog-inner"><button class="dialog-close" id="closeDialog" aria-label="Close">×</button><p class="eyebrow">REELFORGE · FIRST RELEASE</p><h2>Made to move<br><em>with your music.</em></h2>This build creates a 60-second vertical music video with animated scenes, transitions, audio-reactive motion and optional lyric-synced text. Paste lyrics to sequence each line and guide visual moods. You can blend in your own footage. It renders locally and exports WebM. It does not automatically transcribe audio or generate AI live-action footage.<button class="dialog-ok" id="okDialog">Back to studio</button></div></dialog>
+<dialog id="aboutDialog"><div class="dialog-inner"><button class="dialog-close" id="closeDialog" aria-label="Close">×</button><p class="eyebrow">REELFORGE · FIRST RELEASE</p><h2>Made to move<br><em>with your music.</em></h2>This build creates a 60-second vertical music video with animated scenes, transitions, audio-reactive motion and optional lyric-synced text. Paste lyrics to sequence each line and guide visual moods. You can blend in your own footage. It renders locally and exports MP4. With a Gemini API key, it analyses audio, transcribes lyrics and creates an automatic visual plan. It does not generate original live-action footage.<button class="dialog-ok" id="okDialog">Back to studio</button></div></dialog>
 <script src="app.js"></script></body></html>
