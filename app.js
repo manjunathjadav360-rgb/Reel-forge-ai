@@ -5,7 +5,7 @@ const audioInput=$("audioFile"),videoInput=$("videoFile"),audio=$("audioPlayer")
 const audioName=$("audioName"),audioMeta=$("audioMeta"),audioDetails=$("audioDetails"),durationLabel=$("durationLabel"),videoName=$("videoName");
 const playBtn=$("playBtn"),exportBtn=$("exportBtn"),empty=$("previewEmpty"),note=$("previewNote"),caption=$("captionInput"),lyricsInput=$("lyricsInput");
 const progressWrap=$("progressWrap"),progressBar=$("progressBar"),progressText=$("progressText"),about=$("aboutDialog");
-const geminiKey=$("geminiKey"),autoCreateBtn=$("autoCreateBtn"),aiStatus=$("aiStatus");
+const geminiKey=$("geminiKey"),autoCreateBtn=$("autoCreateBtn"),aiStatus=$("aiStatus"),creativePrompt=$("creativePrompt");
 let aiPlan=[];
 const W=540,H=960,VIDEO_SECONDS=60,FPS=30;
 ctx.scale(canvas.width/W,canvas.height/H);
@@ -217,10 +217,10 @@ audio.addEventListener("ended",()=>{if(!recording){playBtn.innerHTML="▶ <span>
 function fileToBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(",")[1]);r.onerror=reject;r.readAsDataURL(file);});}
 function parseAIJson(value){const s=value.replace(/^```(?:json)?/i,"").replace(/```$/,"").trim();return JSON.parse(s.slice(s.indexOf("{"),s.lastIndexOf("}")+1));}
 autoCreateBtn.addEventListener("click",async()=>{
- const file=audioInput.files&&audioInput.files[0],key=geminiKey.value.trim();
- if(!file){aiStatus.textContent="Upload a song first";return;}
+ const file=audioInput.files&&audioInput.files[0],videoFile=videoInput.files&&videoInput.files[0],mediaFile=file||videoFile,key=geminiKey.value.trim();
+ if(!mediaFile){aiStatus.textContent="Upload audio or a video containing sound first";return;}
  if(!key){aiStatus.textContent="Paste a Gemini API key first";geminiKey.focus();return;}
- if(file.size>18*1024*1024){aiStatus.textContent="Choose audio smaller than 18 MB";return;}
+ if(mediaFile.size>18*1024*1024){aiStatus.textContent="Choose a media file smaller than 18 MB for inline AI analysis";return;}
  autoCreateBtn.disabled=true;aiStatus.textContent="AI is analysing your song…";
  try{
   const data=await fileToBase64(file);
