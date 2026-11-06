@@ -12,12 +12,12 @@
 <section class="intro"><p class="eyebrow">A MUSIC VIDEO, MADE AROUND YOUR SOUND</p><h1>Turn sound into<br><em>something visual.</em></h1><p class="intro-copy">A 60-second vertical cut, paced to your music. No editing timeline to learn.</p></section>
 <section class="workspace">
 <div class="editor-column">
-<div class="section-heading"><div><span class="step">01</span><h2>Your soundtrack</h2></div><span class="muted">MP3 · WAV · M4A · AAC</span></div>
+<div class="section-heading"><div><span class="step">01</span><h2>Your soundtrack</h2></div><span class="muted">Audio or video with sound</span></div>
 <label class="upload-card" for="audioFile" id="audioDrop"><input id="audioFile" type="file" accept="audio/*"><span class="upload-icon">↗</span><span class="upload-title" id="audioName">Choose your song</span><span class="upload-sub" id="audioMeta">Select audio from your device</span></label>
 <audio id="audioPlayer" preload="metadata"></audio>
 <div class="audio-details" id="audioDetails" hidden><span id="durationLabel">0:00</span><span class="audio-detail-note">Your track will be trimmed or looped to 60 seconds</span></div>
 <div class="section-heading second-heading"><div><span class="step">02</span><h2>AI auto-create</h2></div><span class="muted">Automatic song analysis</span></div>
-<div class="ai-panel"><label class="field-label" for="geminiKey">Gemini API key <span>Free-tier key</span></label><input id="geminiKey" class="text-input" type="password" autocomplete="off" placeholder="Paste your Gemini API key"><div class="ai-actions"><button id="autoCreateBtn" class="ai-button" type="button" disabled>✦ Analyse song & build video</button><span id="aiStatus">Upload a song to begin</span></div><p class="ai-hint">AI transcribes supported audio, detects mood and builds a timed visual plan. The key is used directly in this browser session.</p></div>
+<div class="ai-panel"><label class="field-label" for="creativePrompt">Your video prompt <span>Describe the story, style or scenes you want</span></label><textarea id="creativePrompt" class="lyrics-input prompt-input" rows="3" maxlength="2000" placeholder="Example: Create a dreamy romantic night-drive story, cinematic shots, soft glowing lights, match every lyric and beat…"></textarea><label class="field-label" for="geminiKey">Gemini API key <span>Free-tier key</span></label><input id="geminiKey" class="text-input" type="password" autocomplete="off" placeholder="Paste your Gemini API key"><div class="ai-actions"><button id="autoCreateBtn" class="ai-button" type="button" disabled>✦ Analyse song & build video</button><span id="aiStatus">Upload a song to begin</span></div><p class="ai-hint">Upload audio or a video with sound, add your creative prompt and optional lyrics, then let AI plan the video. A Gemini API key is required.</p></div>
 <div class="section-heading second-heading"><div><span class="step">03</span><h2>Visual direction</h2></div><span class="muted">Optional · AI selects this</span></div>
 <div class="style-grid" id="styleGrid">
 <button class="style-card selected" data-style="cinematic"><span class="style-preview cinematic-preview"><i></i><b></b></span><span class="style-name">Cinematic</span><span class="style-desc">Film-like atmosphere</span></button>
@@ -28,7 +28,7 @@
 <div class="section-heading second-heading"><div><span class="step">04</span><h2>Make it yours</h2></div><span class="muted">Optional</span></div>
 <label class="field-label" for="captionInput">Main title</label><input id="captionInput" class="text-input" maxlength="54" placeholder="e.g. Kaise Hain Naina">
 <label class="field-label lyrics-label" for="lyricsInput">Song lyrics <span>Paste lyrics · each line becomes a timed scene</span></label><textarea id="lyricsInput" class="lyrics-input" rows="5" maxlength="5000" placeholder="Paste your song lyrics here, one line at a time…"></textarea>
-<p class="lyrics-hint">ReelForge will sequence your lines across the 60-second video and choose visual moods from the words. Lyrics are not automatically transcribed from audio.</p>
+<p class="lyrics-hint">ReelForge will sequence your lines across the 60-second video and choose visual moods from the words. Lyrics can be pasted manually or transcribed by AI from supported audio/video.</p>
 <label class="field-label video-label" for="videoFile">Your own footage <span>Optional · MP4 / MOV / WebM</span></label><label class="video-upload" for="videoFile"><span>＋</span><span id="videoName">Add a video to blend into your edit</span><input id="videoFile" type="file" accept="video/*"></label>
 <p class="fine-print">No footage? ReelForge builds a moving visual world from animated scenes, light, texture and music-reactive motion. Your files stay on your device.</p>
 </div>
