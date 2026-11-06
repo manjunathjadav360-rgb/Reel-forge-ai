@@ -1,12 +1,14 @@
-name: ReelForge AI - Validate
+name: ReelForge AI - Deploy and Validate
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -19,3 +21,26 @@ jobs:
           node -e 'const fs=require("fs");const h=fs.readFileSync("index.html","utf8");const s=fs.readFileSync("app.js","utf8");for(const id of ["audioFile","audioPlayer","previewCanvas","exportBtn","lyricsInput","geminiKey","autoCreateBtn","aiStatus","creativePrompt"])if(!h.includes("id=\""+id+"\""))throw Error("Missing "+id);for(const f of ["function convertToMp4(","video/mp4","libx264","gemini-2.5-flash","function lyricLines()","new MediaRecorder","User creative direction","video and its soundtrack"])if(!s.includes(f))throw Error("Missing "+f);console.log("AI and MP4 feature checks passed")'
       - name: Verify export recovery
         run: node -e 'const s=require("fs").readFileSync("app.js","utf8");if(!s.includes("Export interrupted"))throw Error("Missing recovery");console.log("Recovery check passed")'
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
