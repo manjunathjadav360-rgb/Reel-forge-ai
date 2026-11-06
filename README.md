@@ -11,6 +11,7 @@ A phone-first music-video studio. Add a soundtrack, choose a visual direction, a
 - Audio-reactive motion and waveform accents using the live audio analyser
 - Optional user footage with subtle camera movement and cinematic overlay
 - Custom title treatment
+- Optional lyric text input: pasted lines are sequenced across the 60-second cut, displayed as timed captions and used for simple keyword-based visual mood selection
 - Exact 60-second render: longer songs are cut at 60 seconds; shorter songs loop to fill the cut
 - 720 × 1280 vertical video export with synchronized audio as WebM
 - Responsive phone-first interface
@@ -24,7 +25,7 @@ To enable deployment, open **Settings → Pages → Build and deployment → Sou
 
 ## Honest capability boundary
 
-This release creates an actual animated music-video composition, not AI-generated live-action footage. It does not yet transcribe lyrics or identify semantic story beats. Audio-reactive motion responds to the live frequency spectrum; it is not advertised as precise beat detection. No paid AI service or unlimited free generation is assumed.
+This release creates an actual animated music-video composition, not AI-generated live-action footage. Lyrics are not automatically transcribed from audio. When users paste lyrics, lines are evenly sequenced across the 60-second cut and simple keyword rules guide visual mood selection; this is not deep semantic AI story understanding. Audio-reactive motion responds to the live frequency spectrum; it is not advertised as precise beat detection. No paid AI service or unlimited free generation is assumed.
 
 ## Next architecture layer
 
