@@ -223,13 +223,15 @@ autoCreateBtn.addEventListener("click",async()=>{
  if(mediaFile.size>18*1024*1024){aiStatus.textContent="Choose a media file smaller than 18 MB for inline AI analysis";return;}
  autoCreateBtn.disabled=true;aiStatus.textContent="AI is analysing your song…";
  try{
-  const data=await fileToBase64(file);
-  const prompt="Listen to this song. Return only JSON with keys title, mood, style, lyrics, scenes. Transcribe lyrics accurately in the original language; use an empty array if unclear. mood is a short label. style is one of cinematic,type,dream,pulse. scenes is 4 to 10 objects covering 0-60 seconds with numeric start/end, scene from horizon,city,stars,ocean,light,finale, and short caption. Match scene changes to the lyrics, emotion and energy. Do not invent lyrics.";
-  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:file.type||"audio/mpeg",data}}]}],generationConfig:{temperature:0.25,responseMimeType:"application/json"}})});
+  const data=await fileToBase64(mediaFile);
+  const suppliedLyrics=lyricsInput.value.trim();
+  const direction=creativePrompt.value.trim()||"Use your best creative judgement and make an engaging music video.";
+  const prompt="You are a professional music-video director. Analyse the attached "+(mediaFile.type.startsWith("video/")?"video and its soundtrack":"song audio")+". User creative direction: "+direction+". User-provided lyrics (if any; treat as authoritative): "+(suppliedLyrics||"None supplied; transcribe audible lyrics accurately if possible, otherwise return an empty lyrics array. Never invent lyrics.")+". Return only JSON with keys title, mood, style, lyrics, scenes. mood is a short label. style is one of cinematic,type,dream,pulse. scenes is 4 to 10 objects covering 0-60 seconds with numeric start/end, scene from horizon,city,stars,ocean,light,finale, and short caption. Create a coherent visual story following the meaning and emotional progression of lyrics, musical energy and the user's direction. Never fabricate lyrics.";
+  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt},{inline_data:{mime_type:mediaFile.type||"audio/mpeg",data}}]}],generationConfig:{temperature:0.35,responseMimeType:"application/json"}})});
   const body=await res.json();if(!res.ok)throw new Error(body.error?.message||"AI request failed");
   const answer=body.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("")||"",plan=parseAIJson(answer);
   aiPlan=Array.isArray(plan.scenes)?plan.scenes.map(p=>({start:Math.max(0,Number(p.start)||0),end:Math.min(60,Number(p.end)||60),scene:scenes.includes(p.scene)?p.scene:"horizon",caption:String(p.caption||"")})).filter(p=>p.end>p.start):[];
-  if(Array.isArray(plan.lyrics))lyricsInput.value=plan.lyrics.slice(0,60).join("\n");
+  if(Array.isArray(plan.lyrics)&&plan.lyrics.length&&!suppliedLyrics)lyricsInput.value=plan.lyrics.slice(0,60).join("\n");
   if(plan.title)caption.value=String(plan.title).slice(0,54);
   if(["cinematic","type","dream","pulse"].includes(plan.style)){style=plan.style;document.querySelectorAll(".style-card").forEach(el=>el.classList.toggle("selected",el.dataset.style===style));}
   drawFrame(0);aiStatus.textContent="Ready · "+aiPlan.length+" timed scenes · "+lyricLines().length+" lyric lines";setStatus("AI song analysis complete");
