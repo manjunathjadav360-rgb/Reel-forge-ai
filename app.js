@@ -103,7 +103,7 @@ function wrapText(text,maxChars){const words=text.trim().split(/\s+/);const line
 function drawTypography(t,energy,index,transition){
  const title=caption.value.trim()||"A feeling in motion";
  const sceneWords=["LET THE MOMENT","STAY A LITTLE","SOMEWHERE IN TIME","FEEL EVERYTHING","LOST IN THE LIGHT","AND THEN, US"];
- const words=style==="type"?sceneWords[index%sceneWords.length]:wrapText(title,18);
+ const words=style==="type"?(caption.value.trim()?wrapText(title,16):[sceneWords[index%sceneWords.length]]):wrapText(title,18);
  const reveal=clamp((t%10)/1.25);
  const alpha=clamp(Math.min(reveal,1-transition*.75));
  ctx.save();ctx.globalAlpha=alpha;
@@ -157,14 +157,18 @@ audioInput.addEventListener("change",()=>{
  if(!file.type.startsWith("audio/")){setStatus("Choose a valid audio file");return;}
  if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(file);audio.src=audioUrl;audio.load();
  audioName.textContent=file.name;audioMeta.textContent=(file.size/1048576).toFixed(1)+" MB · Loaded locally";audioDetails.hidden=false;
- audio.addEventListener("loadedmetadata",()=>{durationLabel.textContent=clock(audio.duration);setStatus("Ready · "+clock(audio.duration)+" soundtrack");},{once:true});
- empty.hidden=true;playBtn.disabled=false;exportBtn.disabled=false;progressWrap.hidden=true;startVisuals();
+ audio.addEventListener("loadedmetadata",()=>{
+  if(!Number.isFinite(audio.duration)||audio.duration<=0){setStatus("This audio file has no usable duration");return;}
+  durationLabel.textContent=clock(audio.duration);setStatus("Ready · "+clock(audio.duration)+" soundtrack");playBtn.disabled=false;exportBtn.disabled=false;drawFrame(0);
+ },{once:true});
+ empty.hidden=true;playBtn.disabled=true;exportBtn.disabled=true;progressWrap.hidden=true;startVisuals();
 });
 videoInput.addEventListener("change",()=>{
  const file=videoInput.files?.[0];if(!file)return;if(!file.type.startsWith("video/")){setStatus("Choose a valid video file");return;}
  cleanupVideo();videoUrl=URL.createObjectURL(file);footage=document.createElement("video");footage.src=videoUrl;footage.muted=true;footage.loop=true;footage.playsInline=true;footage.preload="auto";
  footage.addEventListener("loadeddata",()=>drawFrame(audio.currentTime||0),{once:true});footage.play().catch(()=>{});videoName.textContent=file.name;startVisuals();
 });
+audio.addEventListener("error",()=>{playBtn.disabled=true;exportBtn.disabled=true;setStatus("Could not read this audio file. Try MP3, WAV or M4A.");});
 $("styleGrid").addEventListener("click",e=>{const b=e.target.closest("[data-style]");if(!b)return;style=b.dataset.style;document.querySelectorAll(".style-card").forEach(el=>el.classList.toggle("selected",el===b));drawFrame(audio.currentTime||0);});
 caption.addEventListener("input",()=>drawFrame(audio.currentTime||0));
 playBtn.addEventListener("click",async()=>{
@@ -185,9 +189,9 @@ exportBtn.addEventListener("click",async()=>{
  try{
   await setupAudioGraph();if(audioContext.state!=="running")await audioContext.resume();
   const videoStream=canvas.captureStream(FPS);activeStream=new MediaStream([...videoStream.getVideoTracks(),...recordDestination.stream.getAudioTracks()]);
-  const mime=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"].find(x=>MediaRecorder.isTypeSupported(x));
+  const mime=["video/webm;codecs=vp8,opus","video/webm;codecs=vp9,opus","video/webm"].find(x=>MediaRecorder.isTypeSupported(x));
   if(!mime)throw new Error("This browser cannot encode WebM. Try current Chrome.");
-  recorder=new MediaRecorder(activeStream,{mimeType:mime,videoBitsPerSecond:6500000,audioBitsPerSecond:192000});
+  recorder=new MediaRecorder(activeStream,{mimeType:mime,videoBitsPerSecond:4500000,audioBitsPerSecond:160000});
   recorder.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
   recorder.onerror=()=>{recording=false;setStatus("Export interrupted. Try again.");exportBtn.disabled=false;};
   recorder.onstop=()=>{
