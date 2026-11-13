@@ -252,3 +252,17 @@ grant delete on public.business_members to authenticated;
 
 drop policy if exists "service role manages invitations" on public.business_invitations;
 create policy "service role manages invitations" on public.business_invitations for all to service_role using (true) with check (true);
+
+
+-- Support ticket ownership / workload management
+alter table public.support_tickets add column if not exists assigned_to uuid;
+-- Composite FK prevents assigning a ticket to a user outside its business.
+-- ON DELETE SET NULL clears assignments when a teammate is removed.
+alter table public.support_tickets
+  add constraint support_tickets_business_assignee_fkey
+  foreign key (business_id, assigned_to)
+  references public.business_members (business_id, user_id)
+  on delete set null (assigned_to);
+create index if not exists support_tickets_business_assignee_status_idx
+  on public.support_tickets (business_id, assigned_to, status, created_at desc);
+-- A database trigger validates that the assignee has owner, admin, or agent role.
