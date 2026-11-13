@@ -64,6 +64,17 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(url, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+    const { data: userPage, error: usersError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (usersError) return reply({ error: "Could not verify the invitation email." }, 500);
+    if (userPage.users.some((user) => user.email?.toLowerCase() === email)) {
+      return reply({ error: "This email already has an AIKIVO account. Invitations to existing accounts are not supported yet." }, 409);
+    }
+
+    await admin.from("business_invitations").delete()
+      .eq("business_id", membership.business_id)
+      .is("accepted_at", null)
+      .lt("expires_at", new Date().toISOString());
+
     const { data: alreadyMember, error: lookupError } = await admin
       .from("business_members")
       .select("user_id")
