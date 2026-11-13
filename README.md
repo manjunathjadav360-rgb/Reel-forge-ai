@@ -7,11 +7,11 @@ This repository has been repurposed from ReelForge AI to AIKIVO.
 - Supabase email/password account creation and sign-in.
 - Signup trigger creates a business workspace and owner membership.
 - Multi-tenant PostgreSQL tables with Row Level Security.
-- Cloud-saved business profile, AI executives, knowledge items and test conversations.
+- Cloud-saved business profile, AI executives, knowledge items and multi-turn test conversations.
 - Browser voice playground using Web Speech API where supported.
 
 ## AI engine
-The authenticated Supabase Edge Function `aikivo-ai` is deployed with JWT verification enabled. It loads only the signed-in workspace's AI executive and approved knowledge, then uses a server-side OpenAI-compatible chat-completions endpoint when configured. Without a provider key, it uses a conservative FAQ match and offers human follow-up rather than inventing business facts.
+The authenticated Supabase Edge Function `aikivo-ai` is deployed with JWT verification enabled. It loads only the signed-in workspace's AI executive, approved knowledge and the latest 12 messages in the selected conversation. When configured, it sends that context to a server-side OpenAI-compatible chat-completions endpoint. Without a provider key, it uses a conservative FAQ match and offers human follow-up rather than inventing business facts.
 
 To enable generative replies, add these **Edge Function secrets** in the Supabase project:
 - `AIKIVO_LLM_API_KEY` — provider API key (keep it server-side; never commit it).
@@ -23,7 +23,7 @@ The provider key has not been configured yet, so the current test uses knowledge
 ## Important current limitations
 - The browser voice playground is not a production AI agent and does not place or receive phone calls.
 - Real phone calls require a telephony provider, secure server-side endpoint and real-time audio streaming.
-- AI replies currently use the business FAQ keyword matcher, not a hosted generative AI model.
+- Until a provider key is configured, replies use the business FAQ fallback rather than a hosted generative AI model.
 - Do not enter real customer or sensitive business information in this prototype.
 
 ## Supabase
@@ -33,7 +33,7 @@ The app stores workspace records in Supabase and scopes requests by the signed-i
 
 ## Next production steps
 1. Add team invitations and role-aware access controls.
-2. Add secure server-side AI orchestration and secrets management.
+2. Configure an AI provider secret and test multi-turn answers end to end.
 3. Integrate telephony, consent, human handover and call monitoring.
 4. Add billing, privacy/retention controls and end-to-end tests.
 
