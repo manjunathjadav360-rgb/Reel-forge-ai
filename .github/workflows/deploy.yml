@@ -18,7 +18,8 @@ jobs:
         with:
           node-version: 20
       - name: Validate JavaScript syntax
-        run: node --check app.js
+        run: |
+          node --check app.js
           node --check auth.js
           node --check supabase/client.js
           node --check supabase/config.js
@@ -31,6 +32,7 @@ jobs:
           test -f supabase/config.js
           test -f supabase/client.js
           test -f auth.js
+          test -f supabase/functions/aikivo-ai/index.ts
           node -e 'const fs=require("fs");const h=fs.readFileSync("index.html","utf8");for(const id of ["page-overview","page-agents","page-knowledge","page-conversations","page-phone","page-settings","agentForm","knowledgeForm","chatForm"])if(!h.includes(id))throw Error("Missing UI element: "+id);console.log("AIKIVO screens verified")'
 
   deploy:
