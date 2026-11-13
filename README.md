@@ -39,3 +39,11 @@ The app stores workspace records in Supabase and scopes requests by the signed-i
 
 ## Deploy
 Enable GitHub Pages in repository Settings → Pages and verify the Pages workflow publishes the root folder.
+
+
+## Team invitations
+- Workspace owners and admins can invite teammates by email from Team & permissions.
+- Invitees are attached to the inviter's business by the Auth user-created trigger; role data is stored in `business_members`, not user-editable metadata.
+- Owners can invite admins, agents and viewers. Admins can invite agents and viewers.
+- Team role changes and removals are protected by RLS. Owner accounts cannot be removed or demoted through the dashboard.
+- Invitations use Supabase Auth email delivery. Configure the project's Auth email/SMTP settings and allow the GitHub Pages redirect URL if delivery is not enabled.
