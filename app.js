@@ -124,9 +124,14 @@ async function loadWorkspace(session){
   const {data:membership,error:memberError}=await supabase.from("business_members").select("business_id,member_role,businesses(id,name,industry,website,default_language,onboarding_completed)").eq("user_id",session.user.id).limit(1).maybeSingle();
   if(memberError)throw memberError;
   if(!membership||!membership.business_id)throw new Error("Your account has no workspace membership. Please contact support.");
+  if(token!==workspaceLoadToken)return;
   const targetBusinessId=membership.business_id;
   memberRole=membership.member_role||"viewer";
+  businessId=targetBusinessId;
   const business=Array.isArray(membership.businesses)?membership.businesses[0]:membership.businesses;
+  db.business={name:business?.name||"My Business",industry:business?.industry||"Other",website:business?.website||"",language:business?.default_language||"English",onboarding_completed:!!business?.onboarding_completed};
+  render();
+  document.getElementById("accountState").textContent="CLOUD WORKSPACE";
   const [agentsRes,knowledgeRes,sourcesRes,conversationsRes,ticketsRes,membersRes,domainsRes]=await Promise.all([
    supabase.from("ai_executives").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
    supabase.from("knowledge_items").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
@@ -172,7 +177,8 @@ async function loadWorkspace(session){
   if(notice){notice.querySelector("b").textContent="Cloud workspace connected";notice.querySelector("span").textContent="Your AI executives, knowledge and test conversations are saved to your business account."}
  }catch(error){
   console.error("AIKIVO workspace load:",error);
-  toast("Workspace load failed: "+(error.message||"Please refresh."));
+  if(token===workspaceLoadToken)render();
+  toast("Workspace data partly loaded: "+(error.message||"Some sections could not load."));
  }
 }
 
