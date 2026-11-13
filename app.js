@@ -1,5 +1,5 @@
 const supabase = window.aikivoSupabase;
-const emptyData = () => ({business:{name:"My Business",industry:"Other",website:"",language:"English"},agents:[],knowledge:[],chats:[],tickets:[],members:[]});
+const emptyData = () => ({business:{name:"My Business",industry:"Other",website:"",language:"English"},agents:[],knowledge:[],knowledgeSources:[],chats:[],tickets:[],members:[]});
 let db = emptyData();
 let active = null;
 let activeConversationId = null;
@@ -44,7 +44,9 @@ function render(){
 }).join("");
  document.getElementById("agentList").innerHTML=cards||'<article class="card empty">No AI executives yet. Use Create executive to add one.</article>';
  document.getElementById("overviewAgents").innerHTML=db.agents.length?db.agents.slice(0,3).map(a=>'<p>◉　<b>'+safe(a.name)+'</b> — '+safe(a.role)+' <button class="link" data-test="'+a.id+'">Test</button></p>').join(""):"No AI executives yet. Create your first assistant.";
- document.getElementById("knowledgeList").innerHTML=db.knowledge.map(k=>'<div class="knowledge-item"><b>'+safe(k.q)+'</b><p>'+safe(k.a)+'</p><button class="delete" data-kremove="'+k.id+'">Remove</button></div>').join("")||'<p class="empty">No knowledge items added.</p>';
+ document.getElementById("knowledgeList").innerHTML=db.knowledge.map(k=>'<div class="knowledge-item"><b>'+safe(k.q)+'</b><p>'+safe(k.a)+'</p><button class="delete" data-kremove="'+k.id+'">Remove</button></div>').join("")||'<p class="empty">No manual FAQs added yet.</p>';
+ const sourceHost=document.getElementById("knowledgeSources");
+ if(sourceHost)sourceHost.innerHTML=db.knowledgeSources.map(s=>'<div class="source-row"><div><b>'+safe(s.title)+'</b><small>'+safe(s.source_type==="website"?"Website":"Text file")+' · '+Number(s.item_count||0)+' sections · '+new Date(s.created_at).toLocaleDateString()+'</small></div><button class="delete" data-source-remove="'+s.id+'">Remove</button></div>').join("")||'<p class="empty">No imported sources yet.</p>';
  renderConversations();
   renderTickets();
 }
@@ -109,15 +111,17 @@ async function loadWorkspace(session){
   const targetBusinessId=membership.business_id;
   memberRole=membership.member_role||"viewer";
   const business=Array.isArray(membership.businesses)?membership.businesses[0]:membership.businesses;
-  const [agentsRes,knowledgeRes,conversationsRes,ticketsRes,membersRes]=await Promise.all([
+  const [agentsRes,knowledgeRes,sourcesRes,conversationsRes,ticketsRes,membersRes]=await Promise.all([
    supabase.from("ai_executives").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
    supabase.from("knowledge_items").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
+   supabase.from("knowledge_sources").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:false}),
    supabase.from("conversations").select("*").eq("business_id",targetBusinessId).order("started_at",{ascending:false}),
    supabase.from("support_tickets").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:false}),
    supabase.from("business_members").select("user_id,email,display_name,member_role,created_at").eq("business_id",targetBusinessId).order("created_at",{ascending:true})
   ]);
   if(agentsRes.error)throw agentsRes.error;
   if(knowledgeRes.error)throw knowledgeRes.error;
+  if(sourcesRes.error)throw sourcesRes.error;
   if(conversationsRes.error)throw conversationsRes.error;
   if(ticketsRes.error)throw ticketsRes.error;
   if(membersRes.error)throw membersRes.error;
@@ -132,7 +136,8 @@ async function loadWorkspace(session){
   businessId=targetBusinessId;
   db.business={name:business?.name||"My Business",industry:business?.industry||"Other",website:business?.website||"",language:business?.default_language||"English",onboarding_completed:!!business?.onboarding_completed};
   db.agents=(agentsRes.data||[]).map(a=>({id:a.id,name:a.name,role:a.role,greeting:a.greeting,language:a.language,widget_key:a.widget_key,widget_enabled:!!a.widget_enabled}));
-  db.knowledge=(knowledgeRes.data||[]).map(k=>({id:k.id,q:k.question,a:k.answer}));
+  db.knowledge=(knowledgeRes.data||[]).map(k=>({id:k.id,q:k.question,a:k.answer,source_id:k.source_id}));
+  db.knowledgeSources=sourcesRes.data||[];
   db.tickets=ticketsRes.data||[];
   db.members=membersRes.data||[];
   const agentNames=new Map(db.agents.map(a=>[a.id,a.name]));
@@ -243,6 +248,26 @@ async function saveKnowledge(q,a){
  if(error){toast("Could not save knowledge: "+error.message);return false}
  db.knowledge.push({id:data.id,q:data.question,a:data.answer});render();toast("Knowledge saved to cloud");return true;
 }
+async function trainKnowledge(sourceType,payload){
+ if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return false;
+ const {data,error}=await supabase.functions.invoke("aikivo-train",{body:{businessId,sourceType,...payload}});
+ if(error||data?.error){toast(data?.error||error?.message||"Training failed.");return false}
+ const {data:source,error:sourceError}=await supabase.from("knowledge_sources").select("*").eq("id",data.sourceId).single();
+ if(sourceError){toast("Imported, but source list could not refresh: "+sourceError.message);return false}
+ db.knowledgeSources.unshift(source);
+ const {data:items}=await supabase.from("knowledge_items").select("*").eq("source_id",source.id).order("created_at",{ascending:true});
+ db.knowledge.push(...(items||[]).map(k=>({id:k.id,q:k.question,a:k.answer,source_id:k.source_id})));
+ render();toast("Source added to your AI knowledge.");return true;
+}
+async function deleteKnowledgeSource(id){
+ if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
+ const {error}=await supabase.from("knowledge_sources").delete().eq("id",id).eq("business_id",businessId);
+ if(error){toast("Could not remove source: "+error.message);return}
+ db.knowledgeSources=db.knowledgeSources.filter(s=>s.id!==id);
+ const {data}=await supabase.from("knowledge_items").select("*").eq("business_id",businessId).order("created_at",{ascending:true});
+ db.knowledge=(data||[]).map(k=>({id:k.id,q:k.question,a:k.answer,source_id:k.source_id}));
+ render();toast("Imported source removed.");
+}
 async function deleteKnowledge(id){
  if(!requireWorkspace())return;
  const {error}=await supabase.from("knowledge_items").delete().eq("id",id).eq("business_id",businessId);
@@ -267,6 +292,7 @@ document.addEventListener("click",e=>{
  let widgetCopy=e.target.closest("[data-copy-widget]");if(widgetCopy)copyWebsiteWidget(widgetCopy.dataset.copyWidget);
  let r=e.target.closest("[data-remove]");if(r&&confirm("Delete this executive and its linked knowledge?"))deleteAgent(r.dataset.remove);
  let k=e.target.closest("[data-kremove]");if(k)deleteKnowledge(k.dataset.kremove);
+ let source=e.target.closest("[data-source-remove]");if(source&&confirm("Remove this source and all imported knowledge sections?"))deleteKnowledgeSource(source.dataset.sourceRemove);
  let member=e.target.closest("[data-member-remove]");if(member&&confirm("Remove this person from the workspace?"))removeTeamMember(member.dataset.memberRemove);
  let refresh=e.target.closest("[data-refresh-conversations]");if(refresh){supabase.auth.getSession().then(({data})=>loadWorkspace(data.session));}
 
@@ -285,6 +311,18 @@ document.getElementById("knowledgeForm").addEventListener("submit",async e=>{
  const q=document.getElementById("question").value.trim(),a=document.getElementById("answer").value.trim();
  const submit=e.target.querySelector("button");submit.disabled=true;const saved=await saveKnowledge(q,a);submit.disabled=false;
  if(saved)e.target.reset()
+});
+document.getElementById("websiteTrainForm").addEventListener("submit",async e=>{
+ e.preventDefault();const url=document.getElementById("trainWebsiteUrl").value.trim(),button=e.target.querySelector("button");button.disabled=true;button.textContent="Importing…";
+ const saved=await trainKnowledge("website",{url});button.disabled=false;button.textContent="Import website";if(saved)e.target.reset();
+});
+document.getElementById("textTrainForm").addEventListener("submit",async e=>{
+ e.preventDefault();const file=document.getElementById("knowledgeFile").files[0],button=e.target.querySelector("button");if(!file)return;
+ if(!/\.(txt|md)$/i.test(file.name)||file.size>100000){toast("Upload a TXT or Markdown file under 100 KB.");return;}
+ button.disabled=true;button.textContent="Importing…";
+ try{const content=await file.text();const saved=await trainKnowledge("text_file",{title:file.name,fileName:file.name,content});if(saved)e.target.reset();}
+ catch(err){toast("Could not read this file.");}
+ finally{button.disabled=false;button.textContent="Import file";}
 });
 document.getElementById("inviteForm").addEventListener("submit",async e=>{
  e.preventDefault();if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
