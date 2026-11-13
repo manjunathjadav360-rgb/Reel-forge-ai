@@ -54,3 +54,8 @@ Enable GitHub Pages in repository Settings → Pages and verify the Pages workfl
 ### Support ticket assignment
 
 Support tickets include an optional `assigned_to` workspace member. Owners and admins can assign tickets to owners, admins, or agents; agents can claim tickets for themselves. The Support inbox includes All, Assigned to me, and Unassigned filters plus active-ticket workload counts. A composite foreign key prevents cross-workspace assignments and automatically clears the assignee when a team member is removed. A database trigger rejects assignments to viewers or users outside the workspace.
+
+
+### Shared team conversation inbox
+
+The Conversations page is a shared workspace inbox. Team members can view full message threads, owners/admins can assign conversations to any owner/admin/agent, and agents can claim conversations for themselves. Agents can send team replies that are saved in the same conversation history and become part of the context for subsequent AI responses. Resolved conversations are read-only in the team inbox. The database validates conversation assignees against the same business and restricts message creation to support staff roles.
