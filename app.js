@@ -12,6 +12,7 @@ let ticketFilter = "all";
 let conversationFilter = "all";
 let onboardingStep=1;
 let onboardAgentId=null;
+let launchAgentId=null;
 
 function safe(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function toast(s){let t=document.getElementById("toast");t.textContent=s;t.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#172238;color:white;padding:10px 15px;border-radius:8px;font-size:11px;z-index:50";setTimeout(()=>t.style.cssText="",2600)}
@@ -47,6 +48,7 @@ function render(){
  return '<article class="agent-card"><h3>◉　'+safe(a.name)+'</h3><p>'+safe(a.role)+' · '+safe(a.language)+'</p><p>'+safe(a.greeting)+'</p><div class="agent-actions"><button class="secondary" data-test="'+a.id+'">Test voice</button><button class="secondary" data-widget-toggle="'+a.id+'" '+(!["owner","admin"].includes(memberRole)?'disabled':'')+'>'+(a.widget_enabled?'Disable website chat':'Enable website chat')+'</button><button class="secondary" data-remove="'+a.id+'">Delete</button></div><div class="widget-embed"><small class="label">WEBSITE CHAT WIDGET</small><p class="widget-state">'+(a.widget_enabled?'Enabled · ready to embed':'Disabled · enable to receive website chats')+'</p><textarea readonly rows="2">'+safe(snippet)+'</textarea><button class="link" data-copy-widget="'+a.id+'" '+(!a.widget_enabled?'disabled':'')+'>Copy embed code</button></div></article>';
 }).join("");
  document.getElementById("agentList").innerHTML=cards||'<article class="card empty">No AI executives yet. Use Create executive to add one.</article>';
+ renderLaunchCenter();
  document.getElementById("overviewAgents").innerHTML=db.agents.length?db.agents.slice(0,3).map(a=>'<p>◉　<b>'+safe(a.name)+'</b> — '+safe(a.role)+' <button class="link" data-test="'+a.id+'">Test</button></p>').join(""):"No AI executives yet. Create your first assistant.";
  const searchExecutive=document.getElementById("knowledgeSearchExecutive");
  if(searchExecutive){
@@ -217,7 +219,7 @@ async function submitOnboardingStep(event){
    const ok=await saveKnowledge(document.getElementById("onboardQuestion").value.trim(),document.getElementById("onboardAnswer").value.trim());
    if(!ok)throw new Error("Could not save the approved answer.");onboardingStep=4;
   }else{
-   const agent=db.agents.find(a=>a.id===onboardAgentId)||db.agents[0];if(!agent)throw new Error("Create an AI executive before publishing.");
+   const agent=db.agents.find(a=>a.id===onboardAgentId)||db.agents[0];if(!agent)throw new Error("Create an AI executive before publishing.");if(!db.knowledge.length)throw new Error("Add at least one approved knowledge item before publishing.");
    const {error:widgetError}=await supabase.from("ai_executives").update({widget_enabled:true}).eq("id",agent.id).eq("business_id",businessId);if(widgetError)throw widgetError;
    const {error:doneError}=await supabase.from("businesses").update({onboarding_completed:true}).eq("id",businessId);if(doneError)throw doneError;
    agent.widget_enabled=true;db.business.onboarding_completed=true;modal("onboardingModal",false);render();page("agents");toast("AIKIVO setup complete. Website chat is published.");return;
@@ -227,10 +229,41 @@ async function submitOnboardingStep(event){
  finally{if(button)button.disabled=false;}
 }
 
+function renderLaunchCenter(){
+ const select=document.getElementById("launchExecutiveSelect");if(!select)return;
+ if(!db.agents.some(a=>a.id===launchAgentId))launchAgentId=db.agents[0]?.id||null;
+ select.innerHTML=db.agents.map(a=>'<option value="'+safe(a.id)+'" '+(a.id===launchAgentId?'selected':'')+'>'+safe(a.name)+'</option>').join("")||'<option value="">Create an AI executive first</option>';
+ select.disabled=!db.agents.length;
+ const agent=db.agents.find(a=>a.id===launchAgentId),isAdmin=["owner","admin"].includes(memberRole),hasKnowledge=db.knowledge.length>0;
+ const ready=!!agent&&hasKnowledge,enabled=!!agent?.widget_enabled;
+ const website=db.business.website;
+ const steps=[
+  {ok:!!db.business.name&&db.business.name!=="My Business",title:"Business profile",detail:website?"Business name and website are saved.":"Business name saved. Add your website URL in Settings when ready."},
+  {ok:!!agent,title:"AI executive",detail:agent?agent.name+" is configured.":"Create an AI executive first."},
+  {ok:hasKnowledge,title:"Approved knowledge",detail:hasKnowledge?db.knowledge.length+" approved knowledge item(s) available.":"Add at least one verified FAQ or import business information."},
+  {ok:enabled,title:"Website chat published",detail:enabled?"Widget is enabled and ready to install.":"Publish the widget after completing the required setup."}
+ ];
+ document.getElementById("launchChecklist").innerHTML=steps.map((s,i)=>'<div class="launch-step"><span class="launch-step-icon '+(s.ok?'done':'pending')+'">'+(s.ok?'✓':(i+1))+'</span><div><b>'+safe(s.title)+'</b><small>'+safe(s.detail)+'</small></div></div>').join("");
+ const badge=document.getElementById("launchStatusBadge");
+ badge.textContent=enabled?"PUBLISHED":ready?"READY TO PUBLISH":"SETUP REQUIRED";
+ const button=document.getElementById("launchPublishButton");
+ button.textContent=enabled?"Disable website chat":"Publish website chat";
+ button.disabled=!isAdmin||(!ready&&!enabled);
+ button.title=!isAdmin?"Only workspace owners and admins can publish.":(!ready&&!enabled?"Add an AI executive and at least one approved knowledge item first.":"");
+ const code=document.getElementById("launchEmbedCode");
+ const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\\/script>':"Create an AI executive to generate installation code.";
+ code.value=snippet;
+ document.getElementById("launchCopyButton").disabled=!enabled||!isAdmin;
+ const preview=document.getElementById("launchPreviewLink");
+ if(enabled&&agent){preview.href="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.html?key="+encodeURIComponent(agent.widget_key);preview.hidden=false;}else{preview.href="#";preview.hidden=true;}
+ document.getElementById("launchCenter").hidden=!isAdmin;
+}
+
 async function toggleWebsiteWidget(id){
  if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
  const agent=db.agents.find(a=>a.id===id);if(!agent)return;
  const enabled=!agent.widget_enabled;
+ if(enabled&&db.knowledge.length===0){toast('Add at least one approved FAQ before publishing.');page('knowledge');return;}
  const {data,error}=await supabase.from("ai_executives").update({widget_enabled:enabled}).eq("id",id).eq("business_id",businessId).select("id,widget_enabled").single();
  if(error){toast("Could not update website widget: "+error.message);return}
  agent.widget_enabled=data.widget_enabled;render();toast(enabled?"Website chat enabled. Copy the embed code.":"Website chat disabled.");
@@ -301,6 +334,8 @@ async function saveBusiness(values){
  db.business={name:data.name,industry:data.industry||"Other",website:data.website||"",language:data.default_language||"English",onboarding_completed:!!data.onboarding_completed};render();toast("Business profile saved to cloud");
 }
 document.addEventListener("click",e=>{
+ if(e.target.closest("#launchPublishButton")){if(launchAgentId)toggleWebsiteWidget(launchAgentId);return;}
+ if(e.target.closest("#launchCopyButton")){if(launchAgentId)copyWebsiteWidget(launchAgentId);return;}
  let n=e.target.closest("[data-page]");if(n)page(n.dataset.page);
  if(e.target.closest("[data-onboarding-start]"))startOnboarding();
  let preview=e.target.closest("[data-onboard-preview]");if(preview){const a=db.agents.find(x=>x.id===onboardAgentId)||db.agents[0];if(a)openTest(a.id);}
@@ -464,6 +499,7 @@ if(aiResult.handoffRecommended||aiResult.mode==="handoff"){const existing=db.tic
  if(saved){saved.q+=(saved.q?"\n":"")+q;saved.a+=(saved.a?"\n":"")+ans;saved.messages=saved.messages||[];saved.messages.push({speaker:"customer",body:q,created_at:new Date().toISOString()},{speaker:"assistant",body:ans,created_at:new Date().toISOString()});render()}
 }
 document.addEventListener("change",async e=>{
+ const launchSelect=e.target.closest("#launchExecutiveSelect");if(launchSelect){launchAgentId=launchSelect.value;renderLaunchCenter();return;}
  const convFilter=e.target.closest("#conversationFilter");if(convFilter){conversationFilter=convFilter.value;renderConversations();return}
  const convAssignee=e.target.closest("[data-conversation-assignee]");if(convAssignee){const {error}=await supabase.from("conversations").update({assigned_to:convAssignee.value||null}).eq("id",convAssignee.dataset.conversationAssignee).eq("business_id",businessId);if(error){toast("Conversation assignment failed: "+error.message);const {data}=await supabase.auth.getSession();await loadWorkspace(data.session);return}const conv=db.chats.find(c=>c.id===convAssignee.dataset.conversationAssignee);if(conv)conv.assigned_to=convAssignee.value||null;renderConversations();toast("Conversation assignment saved.");return}
  const filter=e.target.closest("#ticketFilter");if(filter){ticketFilter=filter.value;renderTickets();return}
