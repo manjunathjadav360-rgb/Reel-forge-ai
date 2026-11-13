@@ -1,4 +1,4 @@
--- Exact hostnames allowed to embed each AIKIVO website widget.
+-- Exact HTTPS hostnames allowed to embed each AIKIVO website widget.
 create table if not exists public.widget_domains (
  id uuid primary key default gen_random_uuid(),
  business_id uuid not null references public.businesses(id) on delete cascade,
@@ -6,6 +6,8 @@ create table if not exists public.widget_domains (
  domain text not null,
  created_by uuid references auth.users(id) on delete set null,
  created_at timestamptz not null default now(),
+ verification_token text not null default encode(gen_random_bytes(24),'hex'),
+ verified_at timestamptz,
  constraint widget_domains_domain_format check (
    length(domain) between 3 and 253
    and domain = lower(domain)
