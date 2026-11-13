@@ -245,11 +245,11 @@ function renderLaunchCenter(){
   {ok:!!agent,title:"AI executive",detail:agent?agent.name+" is configured.":"Create an AI executive first."},
   {ok:hasKnowledge,title:"Approved knowledge",detail:hasKnowledge?db.knowledge.length+" approved knowledge item(s) available.":"Add at least one verified FAQ or import business information."},
   {ok:verifiedDomains.length>0,title:"Verified website domain",detail:verifiedDomains.length?verifiedDomains.map(d=>d.domain).join(", "):"Add a domain and verify its DNS TXT ownership record."},
-  {ok:enabled,title:"Website chat published",detail:enabled?"Widget is enabled and domain-restricted.":"Publish the widget after completing the required setup."}
+  {ok:enabled,title:"Website chat published",detail:enabled?(verifiedDomains.length?"Widget is enabled and restricted to verified domains.":"Widget is enabled but blocked until a domain is DNS-verified."):"Publish the widget after completing the required setup."}
  ];
  document.getElementById("launchChecklist").innerHTML=steps.map((s,i)=>'<div class="launch-step"><span class="launch-step-icon '+(s.ok?'done':'pending')+'">'+(s.ok?'✓':(i+1))+'</span><div><b>'+safe(s.title)+'</b><small>'+safe(s.detail)+'</small></div></div>').join("");
  const badge=document.getElementById("launchStatusBadge");
- badge.textContent=enabled?"PUBLISHED":ready?"READY TO PUBLISH":"SETUP REQUIRED";
+ badge.textContent=enabled?(verifiedDomains.length?"PUBLISHED":"DOMAIN CHECK REQUIRED"):ready?"READY TO PUBLISH":"SETUP REQUIRED";
  const button=document.getElementById("launchPublishButton");
  button.textContent=enabled?"Disable website chat":"Publish website chat";
  button.disabled=!isAdmin||(!ready&&!enabled);
