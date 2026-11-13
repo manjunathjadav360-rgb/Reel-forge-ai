@@ -183,7 +183,7 @@ function startOnboarding(){
  onboardingStep=1;onboardAgentId=db.agents[0]?.id||null;
  if(db.agents.length)onboardingStep=3;
  if(db.agents.length&&db.knowledge.length)onboardingStep=4;
- renderOnboardingStep();modal("onboardingModal",true);
+ renderOnboardingStep();renderOnboardingPanel();modal("onboardingModal",true);
 }
 async function submitOnboardingStep(event){
  event.preventDefault();const button=event.target.querySelector('button[type="submit"]');if(button)button.disabled=true;
@@ -253,7 +253,7 @@ async function saveBusiness(values){
  if(!requireWorkspace())return;
  const {data,error}=await supabase.from("businesses").update({name:values.name,industry:values.industry,website:values.website||null,default_language:values.language}).eq("id",businessId).select().single();
  if(error){toast("Could not update business: "+error.message);return}
- db.business={name:data.name,industry:data.industry||"Other",website:data.website||"",language:data.default_language||"English"};render();toast("Business profile saved to cloud");
+ db.business={name:data.name,industry:data.industry||"Other",website:data.website||"",language:data.default_language||"English",onboarding_completed:!!data.onboarding_completed};render();toast("Business profile saved to cloud");
 }
 document.addEventListener("click",e=>{
  let n=e.target.closest("[data-page]");if(n)page(n.dataset.page);
