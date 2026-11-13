@@ -3,6 +3,7 @@ const emptyData = () => ({business:{name:"My Business",industry:"Other",website:
 let db = emptyData();
 let active = null;
 let activeConversationId = null;
+let demoMode = false;
 let rec = null;
 let currentUser = null;
 let businessId = null;
@@ -23,7 +24,7 @@ function modal(id,on){document.getElementById(id).classList.toggle("open",on)}
 function requireWorkspace(){if(!currentUser||!businessId){toast("Please sign in to use your workspace.");return false}return true}
 function render(){
  const quickTestButton=document.getElementById("quickTestButton");
- if(quickTestButton){quickTestButton.disabled=!db.agents.length;quickTestButton.textContent=db.agents.length?"Test voice":"Create an executive first";}
+ if(quickTestButton){quickTestButton.disabled=false;quickTestButton.textContent=db.agents.length?"Test voice":"Try sample demo";}
  document.getElementById("sideBusiness").textContent=db.business.name;
  renderOnboardingPanel();
  const shownRole=uiRole();
@@ -388,6 +389,7 @@ async function saveBusiness(values){
  db.business={name:data.name,industry:data.industry||"Other",website:data.website||"",language:data.default_language||"English",onboarding_completed:!!data.onboarding_completed};render();toast("Business profile saved to cloud");
 }
 document.addEventListener("click",e=>{
+ if(e.target.closest("#overviewDemoButton")){openDemoTest();return;}
  if(e.target.closest("#launchPublishButton")){if(launchAgentId)toggleWebsiteWidget(launchAgentId);return;}
  if(e.target.closest("#launchCopyButton")){if(launchAgentId)copyWebsiteWidget(launchAgentId);return;}
  if(e.target.closest("#launchAddDomainButton")){addWidgetDomain();return;}
@@ -523,8 +525,29 @@ document.getElementById("businessForm").addEventListener("submit",async e=>{
 });
 document.getElementById("dismiss").onclick=()=>document.getElementById("notice").remove();
 document.getElementById("menu").onclick=()=>document.getElementById("sidebar").classList.toggle("open");
+function openDemoTest(){
+ demoMode=true;active="sample-demo";activeConversationId=null;
+ document.getElementById("testTitle").textContent="Try AIKIVO · Sample Business";
+ document.getElementById("chat").innerHTML='<div class="bubble bot">Hello! Welcome to Sample Business. I’m the sample AI customer-care assistant. Ask me about services, opening hours, pricing, or speaking to a person. All business details in this demo are illustrative.</div>';
+ document.getElementById("voiceStatus").textContent="Demo ready · no executive, company setup, or phone number needed. Replies are simulated.";
+ modal("testModal",true);
+}
+function respondDemo(q){
+ bubble(q,"human");
+ const s=q.toLowerCase();
+ let ans;
+ if(/human|person|agent|representative|staff|call me|talk to someone/.test(s)) ans="Of course. In a real business setup, I would create a support request for a team member to follow up. This sample demo does not contact a real person.";
+ else if(/hour|open|timing|time|close/.test(s)) ans="Our sample business hours are Monday to Saturday, 9:00 AM to 6:00 PM. These are example hours only; a business can add its actual timings in its knowledge base.";
+ else if(/price|pricing|cost|fee|charge|payment/.test(s)) ans="Pricing depends on the service you choose. In a live setup, I would use the business’s approved pricing information rather than guess. This sample business has no real prices configured.";
+ else if(/service|offer|do you|product|help with/.test(s)) ans="Sample Business can help customers with general enquiries, service information, and support requests. These are demonstration details, not a real company’s offerings.";
+ else if(/refund|return|cancel|order|booking|appointment/.test(s)) ans="I can help collect the details for that request. In a real deployment, the business would configure its verified return, refund, booking, or cancellation policy.";
+ else if(/hello|hi|hey|good morning|good evening/.test(s)) ans="Hello! Thanks for contacting Sample Business. What would you like help with today?";
+ else ans="Thanks for your question. I’m the AIKIVO sample assistant, so I only have example business information. A real AI executive can answer from the business’s approved knowledge base and route requests to its team.";
+ bubble(ans,"bot");say(ans,"English");
+ document.getElementById("voiceStatus").textContent="Sample demo · replies are simulated, not connected to a real business.";
+}
 async function openTest(id){
- active=id;activeConversationId=null;let a=db.agents.find(x=>x.id===id);if(!a)return;
+ demoMode=false;active=id;activeConversationId=null;let a=db.agents.find(x=>x.id===id);if(!a)return;
  document.getElementById("testTitle").textContent="Test "+a.name;
  document.getElementById("chat").innerHTML='<div class="bubble bot">'+safe(a.greeting)+'</div>';
  document.getElementById("voiceStatus").textContent="Starting a saved conversation…";
@@ -538,6 +561,7 @@ async function openTest(id){
 function bubble(s,type){let d=document.createElement("div");d.className="bubble "+type;d.textContent=s;let c=document.getElementById("chat");c.appendChild(d);c.scrollTop=c.scrollHeight}
 function say(s,lang){if(!("speechSynthesis"in window))return;let u=new SpeechSynthesisUtterance(s);u.lang=({English:"en-IN",Hindi:"hi-IN",Gujarati:"gu-IN",Kannada:"kn-IN"})[lang]||"en-IN";speechSynthesis.cancel();speechSynthesis.speak(u)}
 async function respond(q){
+ if(demoMode){respondDemo(q);return;}
  if(!requireWorkspace())return;
  let a=db.agents.find(x=>x.id===active);if(!a)return;
  if(!activeConversationId){toast("Wait for the conversation to finish starting.");return}
@@ -585,8 +609,8 @@ document.getElementById("listen").onclick=()=>{
  let SR=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!SR){document.getElementById("voiceStatus").textContent="Speech recognition is not supported in this browser. Type your question instead.";return}
  if(rec){rec.stop();rec=null}
- let a=db.agents.find(x=>x.id===active);if(!a)return;
- rec=new SR();rec.lang=({English:"en-IN",Hindi:"hi-IN",Gujarati:"gu-IN",Kannada:"kn-IN"})[a.language]||"en-IN";
+ let a=db.agents.find(x=>x.id===active);if(!a&&!demoMode)return;
+ rec=new SR();rec.lang=({English:"en-IN",Hindi:"hi-IN",Gujarati:"gu-IN",Kannada:"kn-IN"})[a?.language||"English"]||"en-IN";
  rec.onstart=()=>document.getElementById("voiceStatus").textContent="Listening…";
  rec.onresult=e=>respond(e.results[0][0].transcript);
  rec.onerror=e=>document.getElementById("voiceStatus").textContent="Microphone error: "+e.error;
