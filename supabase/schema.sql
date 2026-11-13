@@ -36,11 +36,17 @@ create table if not exists public.knowledge_items (
     setweight(to_tsvector('simple'::regconfig, coalesce(question, '')), 'A') ||
     setweight(to_tsvector('simple'::regconfig, coalesce(answer, '')), 'B')
   ) stored,
+  search_vector_english tsvector generated always as (
+    setweight(to_tsvector('english'::regconfig, coalesce(question, '')), 'A') ||
+    setweight(to_tsvector('english'::regconfig, coalesce(answer, '')), 'B')
+  ) stored,
   created_at timestamptz not null default now()
 );
 
 create index if not exists knowledge_items_search_vector_idx
   on public.knowledge_items using gin (search_vector);
+create index if not exists knowledge_items_search_vector_english_idx
+  on public.knowledge_items using gin (search_vector_english);
 create index if not exists knowledge_items_business_executive_idx
   on public.knowledge_items (business_id, executive_id);
 
@@ -48,27 +54,45 @@ create or replace function public.search_aikivo_knowledge(
   p_business_id uuid,
   p_executive_id uuid,
   p_query text,
-  p_limit integer default 8
+  p_limit integer default 8,
+  p_language text default 'English'
 )
 returns table (id uuid, question text, answer text, relevance real)
 language sql stable security invoker set search_path = ''
-as $
-  select k.id, k.question, k.answer,
-    ts_rank_cd(k.search_vector, parsed.query, 32)::real as relevance
+as $$
+  select
+    k.id, k.question, k.answer,
+    case
+      when lower(coalesce(p_language, 'english')) in ('english', 'en')
+        then ts_rank_cd(k.search_vector_english, parsed.english_query, 32)::real
+      else ts_rank_cd(k.search_vector, parsed.simple_query, 32)::real
+    end as relevance
   from public.knowledge_items as k
   cross join (
-    select websearch_to_tsquery('simple'::regconfig, left(coalesce(p_query, ''), 500)) as query
+    select
+      websearch_to_tsquery('english'::regconfig,
+        regexp_replace(left(coalesce(p_query, ''), 500), '\\s+', ' or ', 'g')) as english_query,
+      websearch_to_tsquery('simple'::regconfig,
+        regexp_replace(left(coalesce(p_query, ''), 500), '\\s+', ' or ', 'g')) as simple_query
   ) as parsed
   where k.business_id = p_business_id
     and (k.executive_id is null or k.executive_id = p_executive_id)
-    and numnode(parsed.query) > 0
-    and k.search_vector @@ parsed.query
+    and (
+      (lower(coalesce(p_language, 'english')) in ('english', 'en')
+        and numnode(parsed.english_query) > 0
+        and k.search_vector_english @@ parsed.english_query)
+      or
+      (lower(coalesce(p_language, 'english')) not in ('english', 'en')
+        and numnode(parsed.simple_query) > 0
+        and k.search_vector @@ parsed.simple_query)
+    )
   order by relevance desc, k.created_at desc
   limit greatest(1, least(coalesce(p_limit, 8), 12));
-$;
+$$;
 
-revoke all on function public.search_aikivo_knowledge(uuid, uuid, text, integer) from public, anon;
-grant execute on function public.search_aikivo_knowledge(uuid, uuid, text, integer) to authenticated, service_role;
+revoke all on function public.search_aikivo_knowledge(uuid, uuid, text, integer, text) from public, anon;
+grant execute on function public.search_aikivo_knowledge(uuid, uuid, text, integer, text) to authenticated, service_role;
+
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.businesses(id) on delete cascade,
