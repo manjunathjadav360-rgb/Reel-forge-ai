@@ -44,7 +44,7 @@ function render(){
  document.getElementById("website").value=db.business.website;
  document.getElementById("language").value=db.business.language;
  const cards=db.agents.map(a=>{
- const snippet='<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+a.widget_key+'"><\\/script>';
+ const snippet='<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+a.widget_key+'"><\/script>';
  return '<article class="agent-card"><h3>◉　'+safe(a.name)+'</h3><p>'+safe(a.role)+' · '+safe(a.language)+'</p><p>'+safe(a.greeting)+'</p><div class="agent-actions"><button class="secondary" data-test="'+a.id+'">Test voice</button><button class="secondary" data-widget-toggle="'+a.id+'" '+(!["owner","admin"].includes(memberRole)?'disabled':'')+'>'+(a.widget_enabled?'Disable website chat':'Enable website chat')+'</button><button class="secondary" data-remove="'+a.id+'">Delete</button></div><div class="widget-embed"><small class="label">WEBSITE CHAT WIDGET</small><p class="widget-state">'+(a.widget_enabled?'Enabled · ready to embed':'Disabled · enable to receive website chats')+'</p><textarea readonly rows="2">'+safe(snippet)+'</textarea><button class="link" data-copy-widget="'+a.id+'" '+(!a.widget_enabled?'disabled':'')+'>Copy embed code</button></div></article>';
 }).join("");
  document.getElementById("agentList").innerHTML=cards||'<article class="card empty">No AI executives yet. Use Create executive to add one.</article>';
@@ -194,7 +194,7 @@ function renderOnboardingStep(){
   body='<label>Customer question<input id="onboardQuestion" required placeholder="What are your business hours?"></label><label>Verified business answer<textarea id="onboardAnswer" rows="4" required placeholder="Write the exact answer your business approves."></textarea></label><p class="hint">Your assistant should use approved answers and never invent business policies or prices.</p><button class="primary" type="submit">Save answer</button>';
  }else{
   const agent=db.agents.find(a=>a.id===onboardAgentId)||db.agents[0];
-  const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\\/script>':"Create an AI executive first.";
+  const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\/script>':"Create an AI executive first.";
   body='<p class="hint">Preview your assistant, then publish its website chat widget.</p><div class="onboard-preview"><b>'+safe(agent?.name||"No AI executive yet")+'</b><span>'+safe(agent?.role||"")+'</span><p>'+safe(agent?.greeting||"")+'</p></div><button class="secondary" type="button" data-onboard-preview '+(!agent?'disabled':'')+'>Preview assistant</button><label>Website embed code<textarea rows="2" readonly>'+safe(snippet)+'</textarea></label><button class="primary" type="submit" '+(!agent?'disabled':'')+'>Publish chat and finish setup</button>';
  }
  host.innerHTML='<div class="onboard-step-head"><small class="label">STEP '+onboardingStep+' OF 4</small><h2>'+titles[onboardingStep-1]+'</h2></div><form id="onboardingForm" class="onboarding-form">'+body+'</form>';
@@ -257,7 +257,7 @@ function renderLaunchCenter(){
  const domainList=document.getElementById("launchDomainList");
  if(domainList)domainList.innerHTML=domains.map(d=>'<div class="launch-domain-row"><div class="launch-domain-main"><span><b>'+safe(d.domain)+'</b><small>'+(d.verified_at?'DNS ownership verified':'Verification pending · HTTPS hostname')+'</small></span>'+(d.verified_at?'':'<div class="launch-dns-record"><small>TXT name</small><code>_aikivo-verification.'+safe(d.domain)+'</code><small>TXT value</small><code>aikivo-verification='+safe(d.verification_token)+'</code><button type="button" class="secondary" data-domain-copy="'+safe(d.id)+'">Copy DNS record</button><button type="button" class="secondary" data-domain-verify="'+safe(d.id)+'">Verify DNS</button></div>')+'</div><button type="button" class="secondary" data-domain-remove="'+safe(d.id)+'">Remove</button></div>').join("")||'<p class="hint">No website domains yet. Add your website hostname.</p>';
  const code=document.getElementById("launchEmbedCode");
- const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\\/script>':"Create an AI executive to generate installation code.";
+ const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\/script>':"Create an AI executive to generate installation code.";
  code.value=snippet;
  document.getElementById("launchCopyButton").disabled=!enabled||!isAdmin;
  const preview=document.getElementById("launchPreviewLink");
@@ -311,7 +311,7 @@ async function toggleWebsiteWidget(id){
 }
 function copyWebsiteWidget(id){
  const agent=db.agents.find(a=>a.id===id);if(!agent||!agent.widget_enabled)return;
- const snippet='<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\\/script>';
+ const snippet='<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\/script>';
  if(navigator.clipboard?.writeText){navigator.clipboard.writeText(snippet).then(()=>toast("Embed code copied."),()=>toast("Clipboard unavailable. Copy the code from the box."));}
  else{toast("Clipboard unavailable. Copy the code from the box.");}
 }
