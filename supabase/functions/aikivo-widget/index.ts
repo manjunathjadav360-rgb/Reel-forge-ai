@@ -1,10 +1,14 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "apikey, content-type, x-client-info",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+function corsFor(origin: string) {
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Headers": "apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Max-Age": "600",
+    "Vary": "Origin",
+  };
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -60,22 +64,39 @@ async function hashIp(value: string) {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
-
   try {
     const url = Deno.env.get("SUPABASE_URL") ?? "";
     const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    if (!url || !secret) return json({ error: "Server configuration is incomplete." }, 500);
+    if (!url || !secret) return jsonForOrigin({ error: "Server configuration is incomplete." }, 500);
 
     const admin = createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } });
+    const requestOrigin = req.headers.get("origin") ?? "";
+    let parsedOrigin: URL | null = null;
+    try { parsedOrigin = new URL(requestOrigin); } catch { parsedOrigin = null; }
+    const originValid = !!parsedOrigin && parsedOrigin.protocol === "https:" && parsedOrigin.origin === requestOrigin;
+    const originHost = originValid ? parsedOrigin!.hostname.toLowerCase() : "";
+
+    if (req.method === "OPTIONS") {
+      const preflightKey = new URL(req.url).searchParams.get("key") ?? "";
+      if (!originValid || !isUuid(preflightKey)) return new Response(null, { status: 403, headers: { "Vary": "Origin" } });
+      const { data: preflightExecutive } = await admin.from("ai_executives")
+        .select("id").eq("widget_key", preflightKey).eq("widget_enabled", true).maybeSingle();
+      if (!preflightExecutive) return new Response(null, { status: 403, headers: { "Vary": "Origin" } });
+      const { data: preflightDomain } = await admin.from("widget_domains")
+        .select("id").eq("executive_id", preflightExecutive.id).eq("domain", originHost).maybeSingle();
+      if (!preflightDomain) return new Response(null, { status: 403, headers: { "Vary": "Origin" } });
+      return new Response(null, { status: 204, headers: corsFor(requestOrigin) });
+    }
+    if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
+    if (!originValid) return json({ error: "This website origin is not allowed." }, 403);
+
     const payload = await req.json();
     const key = String(payload.key ?? "");
     const action = String(payload.action ?? "message");
     const message = String(payload.message ?? "").trim().slice(0, 2000);
     const conversationId = String(payload.conversationId ?? "");
 
-    if (!isUuid(key)) return json({ error: "This chat widget key is invalid." }, 400);
+    if (!isUuid(key)) return jsonForOrigin({ error: "This chat widget key is invalid." }, 400);
 
     const { data: executive, error: executiveError } = await admin
       .from("ai_executives")
@@ -84,12 +105,21 @@ Deno.serve(async (req: Request) => {
       .eq("widget_enabled", true)
       .maybeSingle();
     if (executiveError || !executive) return json({ error: "This business chat is currently unavailable." }, 404);
+    const { data: allowedDomain, error: domainError } = await admin.from("widget_domains")
+      .select("id").eq("executive_id", executive.id).eq("domain", originHost).maybeSingle();
+    if (domainError) return json({ error: "Website security settings could not be checked." }, 503);
+    if (!allowedDomain) return new Response(JSON.stringify({ error: "This website is not approved for this chat widget." }), {
+      status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Vary": "Origin" },
+    });
+    const jsonForOrigin = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+      status, headers: { ...corsFor(requestOrigin), "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
 
     if (action === "init") {
-      return json({ name: executive.name, greeting: executive.greeting, language: executive.language });
+      return jsonForOrigin({ name: executive.name, greeting: executive.greeting, language: executive.language });
     }
-    if (action !== "message") return json({ error: "Unsupported action." }, 400);
-    if (!message) return json({ error: "Type a message first." }, 400);
+    if (action !== "message") return jsonForOrigin({ error: "Unsupported action." }, 400);
+    if (!message) return jsonForOrigin({ error: "Type a message first." }, 400);
 
     const ip = req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
     const ipHash = await hashIp(ip + ":" + key);
@@ -100,10 +130,10 @@ Deno.serve(async (req: Request) => {
       .eq("widget_key", key)
       .eq("ip_hash", ipHash)
       .gte("created_at", since);
-    if (countError) return json({ error: "Chat is temporarily unavailable. Please try again." }, 503);
-    if ((count ?? 0) >= 20) return json({ error: "Please wait a moment before sending another message." }, 429);
+    if (countError) return jsonForOrigin({ error: "Chat is temporarily unavailable. Please try again." }, 503);
+    if ((count ?? 0) >= 20) return jsonForOrigin({ error: "Please wait a moment before sending another message." }, 429);
     const { error: rateError } = await admin.from("widget_rate_limits").insert({ widget_key: key, ip_hash: ipHash });
-    if (rateError) return json({ error: "Chat is temporarily unavailable. Please try again." }, 503);
+    if (rateError) return jsonForOrigin({ error: "Chat is temporarily unavailable. Please try again." }, 503);
     await admin.from("widget_rate_limits").delete().eq("widget_key", key).lt("created_at", new Date(Date.now() - 86_400_000).toISOString());
 
     let conversation: { id: string; status: string } | null = null;
@@ -120,11 +150,11 @@ Deno.serve(async (req: Request) => {
       const { data, error } = await admin.from("conversations")
         .insert({ business_id: executive.business_id, executive_id: executive.id, channel: "web", status: "open" })
         .select("id,status").single();
-      if (error || !data) return json({ error: "Could not start this chat. Please refresh and try again." }, 500);
+      if (error || !data) return jsonForOrigin({ error: "Could not start this chat. Please refresh and try again." }, 500);
       conversation = data;
     }
     if (conversation.status === "escalated" || conversation.status === "resolved" || conversation.status === "closed") {
-      return json({
+      return jsonForOrigin({
         conversationId: conversation.id,
         answer: "Your conversation has been passed to the support team. Please use the business's contact details if you need immediate assistance.",
         mode: "handoff",
@@ -137,11 +167,11 @@ Deno.serve(async (req: Request) => {
       .eq("conversation_id", conversation.id)
       .order("created_at", { ascending: false })
       .limit(12);
-    if (historyError) return json({ error: "Could not load this conversation." }, 500);
+    if (historyError) return jsonForOrigin({ error: "Could not load this conversation." }, 500);
 
     const { error: customerMessageError } = await admin.from("conversation_messages")
       .insert({ conversation_id: conversation.id, speaker: "customer", body: message });
-    if (customerMessageError) return json({ error: "Your message could not be saved. Please try again." }, 500);
+    if (customerMessageError) return jsonForOrigin({ error: "Your message could not be saved. Please try again." }, 500);
 
     const history = (previousMessages ?? []).reverse().map((item) => ({
       role: item.speaker === "assistant" || item.speaker === "agent" ? "assistant" : "user",
@@ -173,7 +203,7 @@ Deno.serve(async (req: Request) => {
       });
       if (lexical.error) {
         console.error("Widget knowledge search error", lexical.error);
-        return json({ error: "The business knowledge base could not be searched." }, 500);
+        return jsonForOrigin({ error: "The business knowledge base could not be searched." }, 500);
       }
       knowledge = (lexical.data ?? []).filter((item: { relevance?: number }) => Number(item.relevance) > 0);
     }
@@ -218,20 +248,20 @@ Deno.serve(async (req: Request) => {
             }),
             signal: AbortSignal.timeout(25000),
           });
-          if (!response.ok) return json({ error: "The AI assistant is temporarily unavailable. Please try again." }, 502);
+          if (!response.ok) return jsonForOrigin({ error: "The AI assistant is temporarily unavailable. Please try again." }, 502);
           const result = await response.json();
           answer = String(result.choices?.[0]?.message?.content ?? "").trim().slice(0, 3000);
-          if (!answer) return json({ error: "The AI assistant returned an empty reply." }, 502);
+          if (!answer) return jsonForOrigin({ error: "The AI assistant returned an empty reply." }, 502);
           mode = "ai";
         } catch {
-          return json({ error: "The AI assistant is temporarily unavailable. Please try again." }, 502);
+          return jsonForOrigin({ error: "The AI assistant is temporarily unavailable. Please try again." }, 502);
         }
       }
     }
 
     const { error: assistantMessageError } = await admin.from("conversation_messages")
       .insert({ conversation_id: conversation.id, speaker: "assistant", body: answer });
-    if (assistantMessageError) return json({ error: "The reply could not be saved. Please try again." }, 500);
+    if (assistantMessageError) return jsonForOrigin({ error: "The reply could not be saved. Please try again." }, 500);
 
     const handoff = mode === "handoff";
     if (handoff) {
@@ -256,9 +286,9 @@ Deno.serve(async (req: Request) => {
       await admin.from("conversations").update({ status: "escalated" }).eq("id", conversation.id);
     }
 
-    return json({ answer, conversationId: conversation.id, mode, handoff, confidence: handoff ? "low" : "knowledge_supported" });
+    return jsonForOrigin({ answer, conversationId: conversation.id, mode, handoff, confidence: handoff ? "low" : "knowledge_supported" });
   } catch (error) {
     console.error("aikivo-widget error", error);
-    return json({ error: "AIKIVO could not process this message. Please try again." }, 500);
+    return jsonForOrigin({ error: "AIKIVO could not process this message. Please try again." }, 500);
   }
 });
