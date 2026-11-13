@@ -363,7 +363,7 @@ document.getElementById("aiEvaluationForm").addEventListener("submit",async e=>{
  e.preventDefault();
  if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
  const executiveId=document.getElementById("knowledgeSearchExecutive").value;
- const questions=document.getElementById("aiEvaluationQuestions").value.split(/\\r?\\n/).map(q=>q.trim()).filter(Boolean);
+ const questions=document.getElementById("aiEvaluationQuestions").value.split(/\r?\n/).map(q=>q.trim()).filter(Boolean);
  const executive=db.agents.find(a=>a.id===executiveId);
  if(!executive){toast("Choose an AI executive first.");return}
  if(!questions.length){toast("Enter at least one test question.");return}
