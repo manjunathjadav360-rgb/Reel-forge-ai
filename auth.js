@@ -2,6 +2,7 @@
   const client = window.aikivoSupabase;
   if (!client) return;
   const screen = document.getElementById("authScreen");
+  const card = screen.querySelector(".auth-card");
   const form = document.getElementById("authForm");
   const heading = document.getElementById("authHeading");
   const sub = document.getElementById("authSub");
@@ -16,6 +17,18 @@
   const signOut = document.getElementById("signOut");
   let mode = "signin";
   let busy = false;
+
+  const forgot = document.createElement("button");
+  forgot.type = "button";
+  forgot.textContent = "Forgot password?";
+  forgot.style.cssText = "display:block;margin:12px auto 0;background:none;border:0;color:#6476c8;font:inherit;cursor:pointer";
+  form.insertAdjacentElement("afterend", forgot);
+
+  const recovery = document.createElement("form");
+  recovery.hidden = true;
+  recovery.style.cssText = "margin-top:18px;display:grid;gap:12px";
+  recovery.innerHTML = '<label>New password<input id="aikivoNewPassword" type="password" minlength="8" autocomplete="new-password" required placeholder="At least 8 characters"></label><label>Confirm new password<input id="aikivoConfirmPassword" type="password" minlength="8" autocomplete="new-password" required placeholder="Enter it again"></label><button class="primary" type="submit">Update password</button>';
+  card.appendChild(recovery);
 
   function say(text, error) {
     message.textContent = text || "";
@@ -32,6 +45,7 @@
     switchText.textContent = creating ? "Already have an account?" : "New to AIKIVO?";
     switchButton.textContent = creating ? "Sign in" : "Create account";
     password.autocomplete = creating ? "new-password" : "current-password";
+    forgot.hidden = creating;
     say("");
   }
   async function enter(session) {
@@ -59,6 +73,55 @@
       console.warn("Workspace lookup:", e.message);
     }
   }
+
+  forgot.addEventListener("click", async () => {
+    const address = email.value.trim();
+    if (!address) {
+      say("Enter your account email first.", true);
+      email.focus();
+      return;
+    }
+    forgot.disabled = true;
+    say("Sending password reset email…");
+    try {
+      const redirectTo = window.location.origin + window.location.pathname;
+      const { error } = await client.auth.resetPasswordForEmail(address, { redirectTo });
+      if (error) throw error;
+      say("If an account exists for that email, a password reset link has been sent. Check your inbox and spam folder.");
+    } catch (e) {
+      say(e.message || "Could not send the reset email. Please try again.", true);
+    } finally {
+      forgot.disabled = false;
+    }
+  });
+
+  recovery.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (busy) return;
+    const next = document.getElementById("aikivoNewPassword").value;
+    const confirm = document.getElementById("aikivoConfirmPassword").value;
+    if (next.length < 8) { say("Use at least 8 characters.", true); return; }
+    if (next !== confirm) { say("The passwords do not match.", true); return; }
+    busy = true;
+    const button = recovery.querySelector("button");
+    button.disabled = true;
+    say("Updating password…");
+    try {
+      const { data, error } = await client.auth.updateUser({ password: next });
+      if (error) throw error;
+      recovery.hidden = true;
+      form.hidden = false;
+      forgot.hidden = false;
+      say("Password updated. Opening your workspace…");
+      await enter(data.user ? (await client.auth.getSession()).data.session : null);
+    } catch (e) {
+      say(e.message || "Could not update password. Request a new reset link.", true);
+    } finally {
+      busy = false;
+      button.disabled = false;
+    }
+  });
+
   form.addEventListener("submit", async event => {
     event.preventDefault();
     if (busy) return;
@@ -96,6 +159,15 @@
   });
   client.auth.onAuthStateChange((event, session) => {
     if (event === "SIGNED_IN" && session) enter(session);
+    if (event === "PASSWORD_RECOVERY" && session) {
+      screen.classList.remove("hidden");
+      form.hidden = true;
+      forgot.hidden = true;
+      heading.textContent = "Set a new password";
+      sub.textContent = "Choose a new password for your AIKIVO account.";
+      recovery.hidden = false;
+      say("Reset link verified. Choose your new password.");
+    }
     if (event === "SIGNED_OUT") { screen.classList.remove("hidden"); signOut.hidden = true; }
   });
   setMode("signin");
