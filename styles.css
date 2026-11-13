@@ -36,3 +36,5 @@
 .auth-card form[hidden],.auth-card [hidden]{display:none!important}
 
 .scenario-prompts{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}.scenario-prompts button{font-size:10px;padding:8px 10px}
+
+.heading-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
