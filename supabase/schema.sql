@@ -365,3 +365,7 @@ create index if not exists widget_rate_limits_lookup_idx
 alter table public.widget_rate_limits enable row level security;
 revoke all on public.widget_rate_limits from anon,authenticated;
 grant all on public.widget_rate_limits to service_role;
+
+
+-- Business self-serve onboarding state
+alter table public.businesses add column if not exists onboarding_completed boolean not null default false;
