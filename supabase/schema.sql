@@ -143,3 +143,13 @@ grant select, insert, update, delete on table public.knowledge_items to authenti
 grant select, insert on table public.conversations to authenticated;
 grant select, insert on table public.conversation_messages to authenticated;
 grant select, insert, update, delete on table public.support_tickets to authenticated;
+
+-- Human handoff workflow additions (safe to re-run).
+alter table public.support_tickets add column if not exists priority text not null default 'normal';
+alter table public.support_tickets add column if not exists updated_at timestamptz not null default now();
+create index if not exists support_tickets_business_status_idx on public.support_tickets(business_id,status,created_at desc);
+drop policy if exists "members update conversations" on public.conversations;
+create policy "members update conversations" on public.conversations for update to authenticated
+using (exists (select 1 from public.business_members bm where bm.business_id=conversations.business_id and bm.user_id=(select auth.uid())))
+with check (exists (select 1 from public.business_members bm where bm.business_id=conversations.business_id and bm.user_id=(select auth.uid())));
+grant update on table public.conversations to authenticated;
