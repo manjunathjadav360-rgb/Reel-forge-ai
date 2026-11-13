@@ -6,6 +6,7 @@ let activeConversationId = null;
 let rec = null;
 let currentUser = null;
 let businessId = null;
+let memberRole = "viewer";
 let workspaceLoadToken = 0;
 
 function safe(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
@@ -15,6 +16,12 @@ function modal(id,on){document.getElementById(id).classList.toggle("open",on)}
 function requireWorkspace(){if(!currentUser||!businessId){toast("Please sign in to use your workspace.");return false}return true}
 function render(){
  document.getElementById("sideBusiness").textContent=db.business.name;
+ document.getElementById("memberRoleLabel").textContent=memberRole.toUpperCase();
+ document.querySelectorAll("[data-create]").forEach(b=>b.hidden=!["owner","admin"].includes(memberRole));
+ document.getElementById("knowledgeForm").hidden=!["owner","admin"].includes(memberRole);
+ document.getElementById("businessForm").querySelectorAll("input,select,button").forEach(el=>el.disabled=!["owner","admin"].includes(memberRole));
+ document.getElementById("teamRole").textContent=memberRole.charAt(0).toUpperCase()+memberRole.slice(1);
+ document.getElementById("teamPermissionSummary").textContent=memberRole==="owner"?"Full workspace control, including business settings, AI executives, knowledge and support.":memberRole==="admin"?"Manage business settings, AI executives, knowledge and support.":memberRole==="agent"?"Handle conversations and support tickets. Business settings, AI executives and knowledge are read-only.":"View workspace information and support tickets. Editing and customer handling are disabled.";
  document.getElementById("agentCount").textContent=db.agents.length;
  document.getElementById("knowledgeCount").textContent=db.knowledge.length;
  document.getElementById("chatCount").textContent=db.chats.length;
@@ -32,13 +39,14 @@ function render(){
 }
 async function loadWorkspace(session){
  const token=++workspaceLoadToken;
- if(!session){currentUser=null;businessId=null;db=emptyData();render();return}
+ if(!session){currentUser=null;businessId=null;memberRole="viewer";db=emptyData();render();return}
  currentUser=session.user;
  try{
-  const {data:membership,error:memberError}=await supabase.from("business_members").select("business_id,businesses(id,name,industry,website,default_language)").eq("user_id",session.user.id).limit(1).maybeSingle();
+  const {data:membership,error:memberError}=await supabase.from("business_members").select("business_id,member_role,businesses(id,name,industry,website,default_language)").eq("user_id",session.user.id).limit(1).maybeSingle();
   if(memberError)throw memberError;
   if(!membership||!membership.business_id)throw new Error("Your account has no workspace membership. Please contact support.");
   const targetBusinessId=membership.business_id;
+  memberRole=membership.member_role||"viewer";
   const business=Array.isArray(membership.businesses)?membership.businesses[0]:membership.businesses;
   const [agentsRes,knowledgeRes,conversationsRes,ticketsRes]=await Promise.all([
    supabase.from("ai_executives").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
