@@ -3,6 +3,9 @@
   const key=script&&script.dataset.aikivoKey;
   if(!key)return;
   const base="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/";
+  const baseOrigin=new URL(base).origin;
+  const endpoint="https://wxssshmtatilyjktxmji.supabase.co/functions/v1/aikivo-widget";
+  const apiKey="sb_publishable_GSQly3Gx-sOxsf0eLKdO0Q_JAcuaA9R";
   const launcher=document.createElement("button");
   launcher.type="button";
   launcher.textContent="Chat with us";
@@ -19,17 +22,19 @@
     frame.style.display=open?"none":"block";
     launcher.textContent=open?"Chat with us":"Close chat";
   });
-  function mount(){
-    if(!document.body)return;
-    document.body.appendChild(frame);
-    document.body.appendChild(launcher);
-  }
+  function mount(){if(!document.body)return;document.body.appendChild(frame);document.body.appendChild(launcher);}
   if(document.body)mount();else document.addEventListener("DOMContentLoaded",mount,{once:true});
-  window.addEventListener("message",function(event){
-    if(event.origin!==new URL(base).origin||!event.data||event.data.type!=="AIKIVO_CLOSE")return;
-    frame.style.display="none";launcher.textContent="Chat with us";
+  window.addEventListener("message",async function(event){
+    if(event.origin!==baseOrigin||event.source!==frame.contentWindow||!event.data)return;
+    if(event.data.type==="AIKIVO_CLOSE"){frame.style.display="none";launcher.textContent="Chat with us";return;}
+    if(event.data.type!=="AIKIVO_API_REQUEST"||typeof event.data.id!=="string")return;
+    try{
+      const response=await fetch(endpoint+"?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json","apikey":apiKey},body:JSON.stringify({...event.data.body,key})});
+      const data=await response.json().catch(()=>({error:"Could not read the server response."}));
+      frame.contentWindow.postMessage({type:"AIKIVO_API_RESPONSE",id:event.data.id,ok:response.ok,data},baseOrigin);
+    }catch(error){
+      frame.contentWindow.postMessage({type:"AIKIVO_API_RESPONSE",id:event.data.id,ok:false,data:{error:"Chat connection failed. Please try again."}},baseOrigin);
+    }
   });
-  window.addEventListener("resize",function(){
-    if(window.innerWidth<480){frame.style.left="10px";frame.style.right="10px";frame.style.width="auto";frame.style.height="min(560px, calc(100vh - 105px))";}
-  });
+  window.addEventListener("resize",function(){if(window.innerWidth<480){frame.style.left="10px";frame.style.right="10px";frame.style.width="auto";frame.style.height="min(560px, calc(100vh - 105px))";}});
 })();
