@@ -135,6 +135,7 @@ Deno.serve(async (req: Request) => {
         p_executive_id: executive.id,
         p_query: message,
         p_limit: 8,
+        p_language: executive.language || business?.default_language || "English",
       }),
     ]);
     if (knowledgeError) {
