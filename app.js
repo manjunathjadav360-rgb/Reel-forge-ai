@@ -35,7 +35,10 @@ function render(){
  document.getElementById("industry").value=db.business.industry;
  document.getElementById("website").value=db.business.website;
  document.getElementById("language").value=db.business.language;
- const cards=db.agents.map(a=>'<article class="agent-card"><h3>◉　'+safe(a.name)+'</h3><p>'+safe(a.role)+' · '+safe(a.language)+'</p><p>'+safe(a.greeting)+'</p><div class="agent-actions"><button class="secondary" data-test="'+a.id+'">Test voice</button><button class="secondary" data-remove="'+a.id+'">Delete</button></div></article>').join("");
+ const cards=db.agents.map(a=>{
+ const snippet='<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+a.widget_key+'"><\\/script>';
+ return '<article class="agent-card"><h3>◉　'+safe(a.name)+'</h3><p>'+safe(a.role)+' · '+safe(a.language)+'</p><p>'+safe(a.greeting)+'</p><div class="agent-actions"><button class="secondary" data-test="'+a.id+'">Test voice</button><button class="secondary" data-widget-toggle="'+a.id+'" '+(!["owner","admin"].includes(memberRole)?'disabled':'')+'>'+(a.widget_enabled?'Disable website chat':'Enable website chat')+'</button><button class="secondary" data-remove="'+a.id+'">Delete</button></div><div class="widget-embed"><small class="label">WEBSITE CHAT WIDGET</small><p class="widget-state">'+(a.widget_enabled?'Enabled · ready to embed':'Disabled · enable to receive website chats')+'</p><textarea readonly rows="2">'+safe(snippet)+'</textarea><button class="link" data-copy-widget="'+a.id+'" '+(!a.widget_enabled?'disabled':'')+'>Copy embed code</button></div></article>';
+}).join("");
  document.getElementById("agentList").innerHTML=cards||'<article class="card empty">No AI executives yet. Use Create executive to add one.</article>';
  document.getElementById("overviewAgents").innerHTML=db.agents.length?db.agents.slice(0,3).map(a=>'<p>◉　<b>'+safe(a.name)+'</b> — '+safe(a.role)+' <button class="link" data-test="'+a.id+'">Test</button></p>').join(""):"No AI executives yet. Create your first assistant.";
  document.getElementById("knowledgeList").innerHTML=db.knowledge.map(k=>'<div class="knowledge-item"><b>'+safe(k.q)+'</b><p>'+safe(k.a)+'</p><button class="delete" data-kremove="'+k.id+'">Remove</button></div>').join("")||'<p class="empty">No knowledge items added.</p>';
@@ -125,7 +128,7 @@ async function loadWorkspace(session){
   if(token!==workspaceLoadToken)return;
   businessId=targetBusinessId;
   db.business={name:business?.name||"My Business",industry:business?.industry||"Other",website:business?.website||"",language:business?.default_language||"English"};
-  db.agents=(agentsRes.data||[]).map(a=>({id:a.id,name:a.name,role:a.role,greeting:a.greeting,language:a.language}));
+  db.agents=(agentsRes.data||[]).map(a=>({id:a.id,name:a.name,role:a.role,greeting:a.greeting,language:a.language,widget_key:a.widget_key,widget_enabled:!!a.widget_enabled}));
   db.knowledge=(knowledgeRes.data||[]).map(k=>({id:k.id,q:k.question,a:k.answer}));
   db.tickets=ticketsRes.data||[];
   db.members=membersRes.data||[];
@@ -145,11 +148,27 @@ async function loadWorkspace(session){
   toast("Workspace load failed: "+(error.message||"Please refresh."));
  }
 }
+
+async function toggleWebsiteWidget(id){
+ if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
+ const agent=db.agents.find(a=>a.id===id);if(!agent)return;
+ const enabled=!agent.widget_enabled;
+ const {data,error}=await supabase.from("ai_executives").update({widget_enabled:enabled}).eq("id",id).eq("business_id",businessId).select("id,widget_enabled").single();
+ if(error){toast("Could not update website widget: "+error.message);return}
+ agent.widget_enabled=data.widget_enabled;render();toast(enabled?"Website chat enabled. Copy the embed code.":"Website chat disabled.");
+}
+function copyWebsiteWidget(id){
+ const agent=db.agents.find(a=>a.id===id);if(!agent||!agent.widget_enabled)return;
+ const snippet='<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\\/script>';
+ if(navigator.clipboard?.writeText){navigator.clipboard.writeText(snippet).then(()=>toast("Embed code copied."),()=>toast("Clipboard unavailable. Copy the code from the box."));}
+ else{toast("Clipboard unavailable. Copy the code from the box.");}
+}
+
 async function saveAgent(values){
  if(!requireWorkspace())return;
  const {data,error}=await supabase.from("ai_executives").insert({business_id:businessId,name:values.name,role:values.role,greeting:values.greeting,language:values.language}).select().single();
  if(error){toast("Could not save executive: "+error.message);return false}
- db.agents.push({id:data.id,name:data.name,role:data.role,greeting:data.greeting,language:data.language});render();toast("AI executive saved to cloud");return true;
+ db.agents.push({id:data.id,name:data.name,role:data.role,greeting:data.greeting,language:data.language,widget_key:data.widget_key,widget_enabled:!!data.widget_enabled});render();toast("AI executive saved to cloud");return true;
 }
 async function deleteAgent(id){
  if(!requireWorkspace())return;
@@ -181,6 +200,8 @@ document.addEventListener("click",e=>{
  if(e.target.closest("[data-create]")){if(requireWorkspace())modal("createModal",true)}
  if(e.target.closest("[data-close]"))document.querySelectorAll(".backdrop").forEach(x=>x.classList.remove("open"));
  let t=e.target.closest("[data-test]");if(t)openTest(t.dataset.test);
+ let widgetToggle=e.target.closest("[data-widget-toggle]");if(widgetToggle)toggleWebsiteWidget(widgetToggle.dataset.widgetToggle);
+ let widgetCopy=e.target.closest("[data-copy-widget]");if(widgetCopy)copyWebsiteWidget(widgetCopy.dataset.copyWidget);
  let r=e.target.closest("[data-remove]");if(r&&confirm("Delete this executive and its linked knowledge?"))deleteAgent(r.dataset.remove);
  let k=e.target.closest("[data-kremove]");if(k)deleteKnowledge(k.dataset.kremove);
  let member=e.target.closest("[data-member-remove]");if(member&&confirm("Remove this person from the workspace?"))removeTeamMember(member.dataset.memberRemove);
