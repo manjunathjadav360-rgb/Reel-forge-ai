@@ -67,3 +67,10 @@ Each AI executive receives a public widget identifier. Owners/admins can enable 
 
 ### Self-serve business onboarding
 New business owners can complete a guided setup in the dashboard: business profile, first AI executive, first approved knowledge answer, assistant preview, and website-chat publishing. Completion is saved on the business workspace row. The wizard is owner/admin-only; existing workspaces with assistants or knowledge were marked as already onboarded when the column was introduced.
+
+
+## Expanded AI knowledge imports
+- Website training now follows up to 8 same-host HTTPS pages linked from the submitted page.
+- Document imports support selectable-text PDF and DOCX, plus TXT and Markdown.
+- PDF/DOCX are processed in the authenticated Edge Function; scanned image-only PDFs may not contain extractable text.
+- Current import limits: PDF/DOCX up to 5 MB; TXT/Markdown up to 100 KB; website crawl up to 8 pages.
