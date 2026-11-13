@@ -276,7 +276,7 @@ async function trainKnowledge(sourceType,payload){
  db.knowledgeSources.unshift(source);
  const {data:items}=await supabase.from("knowledge_items").select("*").eq("source_id",source.id).order("created_at",{ascending:true});
  db.knowledge.push(...(items||[]).map(k=>({id:k.id,q:k.question,a:k.answer,source_id:k.source_id})));
- render();toast("Imported "+(data.pageCount?data.pageCount+" website pages":data.itemCount+" knowledge sections")+".");return true;
+ render();void refreshSemanticIndex();toast("Imported "+(data.pageCount?data.pageCount+" website pages":data.itemCount+" knowledge sections")+".");return true;
 }
 async function deleteKnowledgeSource(id){
  if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
