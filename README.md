@@ -90,3 +90,5 @@ New business owners can complete a guided setup in the dashboard: business profi
 - Dashboard assistant and website widget use cosine similarity when query embeddings are available, then fall back to the existing multilingual keyword search.
 - Configure `AIKIVO_EMBEDDING_API_KEY` (or a compatible `AIKIVO_LLM_API_KEY`), optionally `AIKIVO_EMBEDDING_URL` and `AIKIVO_EMBEDDING_MODEL`. The default model is `text-embedding-3-small`.
 - The selected embedding provider must return 1536 dimensions. Embedding provider charges may apply.
+
+- New and imported FAQ/document knowledge automatically triggers a semantic-index refresh when an embedding provider is configured. Editing an answer invalidates its old vector so it can be regenerated. If indexing is unavailable, keyword retrieval continues to work.
