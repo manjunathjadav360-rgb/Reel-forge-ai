@@ -238,13 +238,13 @@ function renderLaunchCenter(){
  select.innerHTML=db.agents.map(a=>'<option value="'+safe(a.id)+'" '+(a.id===launchAgentId?'selected':'')+'>'+safe(a.name)+'</option>').join("")||'<option value="">Create an AI executive first</option>';
  select.disabled=!db.agents.length;
  const agent=db.agents.find(a=>a.id===launchAgentId),isAdmin=["owner","admin"].includes(memberRole),hasKnowledge=db.knowledge.length>0;
- const domains=db.widgetDomains.filter(d=>d.executive_id===launchAgentId),enabled=!!agent?.widget_enabled;
- const ready=!!agent&&hasKnowledge&&domains.length>0,website=db.business.website;
+ const domains=db.widgetDomains.filter(d=>d.executive_id===launchAgentId),verifiedDomains=domains.filter(d=>!!d.verified_at),enabled=!!agent?.widget_enabled;
+ const ready=!!agent&&hasKnowledge&&verifiedDomains.length>0,website=db.business.website;
  const steps=[
   {ok:!!db.business.name&&db.business.name!=="My Business",title:"Business profile",detail:website?"Business name and website are saved.":"Business name saved. Add your website URL in Settings."},
   {ok:!!agent,title:"AI executive",detail:agent?agent.name+" is configured.":"Create an AI executive first."},
   {ok:hasKnowledge,title:"Approved knowledge",detail:hasKnowledge?db.knowledge.length+" approved knowledge item(s) available.":"Add at least one verified FAQ or import business information."},
-  {ok:domains.length>0,title:"Approved website domain",detail:domains.length?domains.map(d=>d.domain).join(", "):"Add the exact hostname where this assistant will appear."},
+  {ok:verifiedDomains.length>0,title:"Verified website domain",detail:verifiedDomains.length?verifiedDomains.map(d=>d.domain).join(", "):"Add a domain and verify its DNS TXT ownership record."},
   {ok:enabled,title:"Website chat published",detail:enabled?"Widget is enabled and domain-restricted.":"Publish the widget after completing the required setup."}
  ];
  document.getElementById("launchChecklist").innerHTML=steps.map((s,i)=>'<div class="launch-step"><span class="launch-step-icon '+(s.ok?'done':'pending')+'">'+(s.ok?'✓':(i+1))+'</span><div><b>'+safe(s.title)+'</b><small>'+safe(s.detail)+'</small></div></div>').join("");
@@ -253,16 +253,16 @@ function renderLaunchCenter(){
  const button=document.getElementById("launchPublishButton");
  button.textContent=enabled?"Disable website chat":"Publish website chat";
  button.disabled=!isAdmin||(!ready&&!enabled);
- button.title=!isAdmin?"Only workspace owners and admins can publish.":(!ready&&!enabled?"Add an AI executive, approved knowledge and website domain first.":"");
+ button.title=!isAdmin?"Only workspace owners and admins can publish.":(!ready&&!enabled?"Add an AI executive, approved knowledge and verified website domain first.":"");
  const domainList=document.getElementById("launchDomainList");
- if(domainList)domainList.innerHTML=domains.map(d=>'<div class="launch-domain-row"><span><b>'+safe(d.domain)+'</b><small>Exact hostname · HTTPS</small></span><button type="button" class="secondary" data-domain-remove="'+safe(d.id)+'">Remove</button></div>').join("")||'<p class="hint">No approved domains yet. Add the hostname used by your website.</p>';
+ if(domainList)domainList.innerHTML=domains.map(d=>'<div class="launch-domain-row"><div class="launch-domain-main"><span><b>'+safe(d.domain)+'</b><small>'+(d.verified_at?'DNS ownership verified':'Verification pending · HTTPS hostname')+'</small></span>'+(d.verified_at?'':'<div class="launch-dns-record"><small>TXT name</small><code>_aikivo-verification.'+safe(d.domain)+'</code><small>TXT value</small><code>aikivo-verification='+safe(d.verification_token)+'</code><button type="button" class="secondary" data-domain-copy="'+safe(d.id)+'">Copy DNS record</button><button type="button" class="secondary" data-domain-verify="'+safe(d.id)+'">Verify DNS</button></div>')+'</div><button type="button" class="secondary" data-domain-remove="'+safe(d.id)+'">Remove</button></div>').join("")||'<p class="hint">No website domains yet. Add your website hostname.</p>';
  const code=document.getElementById("launchEmbedCode");
  const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\\/script>':"Create an AI executive to generate installation code.";
  code.value=snippet;
  document.getElementById("launchCopyButton").disabled=!enabled||!isAdmin;
  const preview=document.getElementById("launchPreviewLink");
  let websiteHost="";try{websiteHost=new URL(website).hostname.toLowerCase();}catch{}
- const websiteApproved=domains.some(d=>d.domain===websiteHost);
+ const websiteApproved=verifiedDomains.some(d=>d.domain===websiteHost);
  if(enabled&&website&&websiteApproved){preview.href=website;preview.textContent="Open your website to test ↗";preview.hidden=false;}else{preview.href="#";preview.textContent="Open your website to test ↗";preview.hidden=true;}
  document.getElementById("launchCenter").hidden=!isAdmin;
 }
@@ -276,7 +276,21 @@ async function addWidgetDomain(){
  }
  const {data,error}=await supabase.from("widget_domains").insert({business_id:businessId,executive_id:launchAgentId,domain,created_by:currentUser.id}).select().single();
  if(error){toast(error.code==="23505"?"This hostname is already approved for this assistant.":"Could not add website domain: "+error.message);return;}
- db.widgetDomains.push(data);input.value="";renderLaunchCenter();toast("Website domain approved: "+domain);
+ db.widgetDomains.push(data);input.value="";renderLaunchCenter();toast("Domain added. Publish the DNS TXT record shown below, then verify it.");
+}
+async function verifyWidgetDomain(id){
+ if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
+ const {data,error}=await supabase.functions.invoke("aikivo-domain-verify",{body:{domainId:id,businessId}});
+ if(error){toast("Domain verification request failed. Check your connection and try again.");return;}
+ if(!data?.verified){toast(data?.message||"DNS verification is still pending.");return;}
+ const row=db.widgetDomains.find(d=>d.id===id);if(row)row.verified_at=data.verified_at;
+ renderLaunchCenter();toast("Website ownership verified: "+data.domain);
+}
+async function copyDomainVerificationRecord(id){
+ const row=db.widgetDomains.find(d=>d.id===id);if(!row)return;
+ const value="TXT name: _aikivo-verification."+row.domain+"\nTXT value: aikivo-verification="+row.verification_token;
+ try{await navigator.clipboard.writeText(value);toast("DNS verification record copied.");}
+ catch{toast("Clipboard unavailable. Copy the TXT name and value shown on screen.");}
 }
 async function removeWidgetDomain(id){
  if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
@@ -290,7 +304,7 @@ async function toggleWebsiteWidget(id){
  const agent=db.agents.find(a=>a.id===id);if(!agent)return;
  const enabled=!agent.widget_enabled;
  if(enabled&&db.knowledge.length===0){toast('Add at least one approved FAQ before publishing.');page('knowledge');return;}
- if(enabled&&!db.widgetDomains.some(d=>d.executive_id===id)){toast("Add an approved website domain in the launch center before publishing.");page("agents");return;}
+ if(enabled&&!db.widgetDomains.some(d=>d.executive_id===id&&d.verified_at)){toast("Verify at least one website domain with its DNS TXT record before publishing.");page("agents");return;}
  const {data,error}=await supabase.from("ai_executives").update({widget_enabled:enabled}).eq("id",id).eq("business_id",businessId).select("id,widget_enabled").single();
  if(error){toast("Could not update website widget: "+error.message);return}
  agent.widget_enabled=data.widget_enabled;render();toast(enabled?"Website chat enabled. Copy the embed code.":"Website chat disabled.");
@@ -365,6 +379,8 @@ document.addEventListener("click",e=>{
  if(e.target.closest("#launchCopyButton")){if(launchAgentId)copyWebsiteWidget(launchAgentId);return;}
  if(e.target.closest("#launchAddDomainButton")){addWidgetDomain();return;}
  const removeDomain=e.target.closest("[data-domain-remove]");if(removeDomain){removeWidgetDomain(removeDomain.dataset.domainRemove);return;}
+ const verifyDomain=e.target.closest("[data-domain-verify]");if(verifyDomain){verifyWidgetDomain(verifyDomain.dataset.domainVerify);return;}
+ const copyDomain=e.target.closest("[data-domain-copy]");if(copyDomain){copyDomainVerificationRecord(copyDomain.dataset.domainCopy);return;}
  let n=e.target.closest("[data-page]");if(n)page(n.dataset.page);
  if(e.target.closest("[data-onboarding-start]"))startOnboarding();
  let preview=e.target.closest("[data-onboard-preview]");if(preview){const a=db.agents.find(x=>x.id===onboardAgentId)||db.agents[0];if(a)openTest(a.id);}
