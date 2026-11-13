@@ -15,7 +15,13 @@ Deno.serve(async (req: Request) => {
     const auth = req.headers.get("Authorization") || "";
     if (!auth.startsWith("Bearer ")) return json({ error: "Sign in is required." }, 401);
     const url = Deno.env.get("SUPABASE_URL") || "";
-    const anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+    let anon = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+    if (!anon) {
+      try {
+        const named = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "{}");
+        if (named.default) anon = Deno.env.get(named.default) || "";
+      } catch { /* handled below */ }
+    }
     const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     if (!url || !anon || !service) return json({ error: "Server configuration is incomplete." }, 500);
     const userClient = createClient(url, anon, { global: { headers: { Authorization: auth } }, auth: { persistSession: false, autoRefreshToken: false } });
