@@ -112,6 +112,7 @@ Deno.serve(async (req: Request) => {
       p_executive_id: executiveId,
       p_query: message,
       p_limit: 8,
+      p_language: executive.language || business.default_language || "English",
     });
     if (knowledgeError) {
       console.error("Knowledge search error", knowledgeError);
