@@ -84,6 +84,7 @@ Deno.serve(async (req: Request) => {
     if ((count ?? 0) >= 20) return json({ error: "Please wait a moment before sending another message." }, 429);
     const { error: rateError } = await admin.from("widget_rate_limits").insert({ widget_key: key, ip_hash: ipHash });
     if (rateError) return json({ error: "Chat is temporarily unavailable. Please try again." }, 503);
+    await admin.from("widget_rate_limits").delete().eq("widget_key", key).lt("created_at", new Date(Date.now() - 86_400_000).toISOString());
 
     let conversation: { id: string; status: string } | null = null;
     if (conversationId && isUuid(conversationId)) {
