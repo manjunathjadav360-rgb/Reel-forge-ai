@@ -306,3 +306,37 @@ create trigger support_tickets_validate_assignee
 before insert or update of business_id, assigned_to
 on public.support_tickets
 for each row execute function public.validate_support_ticket_assignee();
+
+
+-- Shared team conversation inbox and assignment
+alter table public.conversations add column if not exists assigned_to uuid;
+do $$
+begin
+  if not exists(select 1 from pg_constraint where conname='conversations_business_assignee_fkey' and conrelid='public.conversations'::regclass) then
+    alter table public.conversations add constraint conversations_business_assignee_fkey
+    foreign key (business_id,assigned_to) references public.business_members(business_id,user_id)
+    on delete set null (assigned_to);
+  end if;
+end $$;
+create index if not exists conversations_business_assignee_started_idx
+  on public.conversations(business_id,assigned_to,started_at desc);
+create or replace function public.validate_conversation_assignee()
+returns trigger language plpgsql set search_path=''
+as $$
+begin
+ if new.assigned_to is null then return new; end if;
+ if not exists(select 1 from public.business_members bm where bm.business_id=new.business_id and bm.user_id=new.assigned_to and bm.member_role in ('owner','admin','agent')) then
+  raise exception 'Conversation assignee must be an owner, admin, or agent in this workspace' using errcode='23514';
+ end if;
+ return new;
+end;
+$$;
+drop trigger if exists conversations_validate_assignee on public.conversations;
+create trigger conversations_validate_assignee before insert or update of business_id,assigned_to on public.conversations for each row execute function public.validate_conversation_assignee();
+drop policy if exists "members create messages" on public.conversation_messages;
+drop policy if exists "support staff create messages" on public.conversation_messages;
+create policy "support staff create messages" on public.conversation_messages for insert to authenticated
+with check (
+ speaker in ('customer','assistant','agent','admin','owner')
+ and exists(select 1 from public.conversations c join public.business_members bm on bm.business_id=c.business_id where c.id=conversation_messages.conversation_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent'))
+);
