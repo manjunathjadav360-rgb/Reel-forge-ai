@@ -9,6 +9,7 @@ let businessId = null;
 let memberRole = "viewer";
 let workspaceLoadToken = 0;
 let ticketFilter = "all";
+let conversationFilter = "all";
 
 function safe(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function toast(s){let t=document.getElementById("toast");t.textContent=s;t.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#172238;color:white;padding:10px 15px;border-radius:8px;font-size:11px;z-index:50";setTimeout(()=>t.style.cssText="",2600)}
@@ -38,8 +39,39 @@ function render(){
  document.getElementById("agentList").innerHTML=cards||'<article class="card empty">No AI executives yet. Use Create executive to add one.</article>';
  document.getElementById("overviewAgents").innerHTML=db.agents.length?db.agents.slice(0,3).map(a=>'<p>◉　<b>'+safe(a.name)+'</b> — '+safe(a.role)+' <button class="link" data-test="'+a.id+'">Test</button></p>').join(""):"No AI executives yet. Create your first assistant.";
  document.getElementById("knowledgeList").innerHTML=db.knowledge.map(k=>'<div class="knowledge-item"><b>'+safe(k.q)+'</b><p>'+safe(k.a)+'</p><button class="delete" data-kremove="'+k.id+'">Remove</button></div>').join("")||'<p class="empty">No knowledge items added.</p>';
- document.getElementById("conversationList").innerHTML=db.chats.slice().reverse().map(c=>'<div class="knowledge-item"><b>'+safe(c.agent)+'</b><p><b>Customer:</b> '+safe(c.q)+'</p><p><b>AI:</b> '+safe(c.a)+'</p><small>'+new Date(c.at).toLocaleString()+'</small></div>').join("")||"No conversations yet. Run a voice test to see it here.";
+ renderConversations();
   renderTickets();
+}
+
+
+function renderConversations(){
+ const roster=db.members.filter(m=>["owner","admin","agent"].includes(m.member_role));
+ const visible=db.chats.filter(c=>conversationFilter==="mine"?c.assigned_to===currentUser?.id:conversationFilter==="unassigned"?!c.assigned_to:true);
+ const list=document.getElementById("conversationList");
+ if(!list)return;
+ list.innerHTML=visible.slice().reverse().map(c=>{
+  const assignee=db.members.find(m=>m.user_id===c.assigned_to);
+  const canAssign=memberRole==="owner"||memberRole==="admin"||memberRole==="agent";
+  const choices=memberRole==="owner"||memberRole==="admin"?roster:(memberRole==="agent"?roster.filter(m=>m.user_id===currentUser?.id):[]);
+  let options='<option value="">Unassigned</option>'+choices.map(m=>'<option value="'+m.user_id+'" '+(c.assigned_to===m.user_id?"selected":"")+'>'+safe(m.display_name||m.email||"Team member")+' · '+safe(m.member_role)+'</option>').join("");
+  if(c.assigned_to&&!choices.some(m=>m.user_id===c.assigned_to))options+='<option value="'+c.assigned_to+'" selected>Current assignee</option>';
+  const messages=(c.messages||[]).map(m=>'<div class="thread-message"><b>'+safe(({customer:"Customer",assistant:"AI executive",agent:"Agent",admin:"Admin",owner:"Owner"})[m.speaker]||m.speaker)+'</b><p>'+safe(m.body)+'</p><small>'+new Date(m.created_at).toLocaleString()+'</small></div>').join("")||'<p class="empty">No messages yet.</p>';
+  const replyAllowed=["owner","admin","agent"].includes(memberRole)&&c.status!=="resolved";
+  return '<article class="conversation-card"><div class="conversation-head"><div><b>'+safe(c.agent)+'</b><small>'+new Date(c.at).toLocaleString()+'</small></div><span class="conversation-status">'+safe(c.status||"open")+'</span></div><div class="conversation-assignment"><span>Assigned to: <b>'+safe(assignee?.display_name||assignee?.email||(c.assigned_to?"Team member":"Unassigned"))+'</b></span><select data-conversation-assignee="'+c.id+'" '+(!canAssign?'disabled':'')+'>'+options+'</select></div><div class="conversation-thread">'+messages+'</div>'+(replyAllowed?'<form class="team-reply-form" data-team-reply="'+c.id+'"><textarea id="reply-'+c.id+'" rows="2" placeholder="Write a reply as your support team…" required></textarea><button class="primary" type="submit">Send reply</button></form>':'<p class="hint">This conversation is resolved or your role is read-only.</p>')+'</article>';
+ }).join("")||'<p class="empty">'+(db.chats.length?"No conversations match this filter.":"No conversations yet. Start a test conversation to see it here.")+'</p>';
+}
+async function sendTeamReply(conversationId,body){
+ if(!requireWorkspace()||!["owner","admin","agent"].includes(memberRole))return;
+ const conversation=db.chats.find(c=>c.id===conversationId);
+ if(!conversation||conversation.status==="resolved")return;
+ const {data,error}=await supabase.from("conversation_messages").insert({conversation_id:conversationId,speaker:"agent",body}).select().single();
+ if(error){toast("Reply failed: "+error.message);return false}
+ const assignment=conversation.assigned_to||currentUser.id;
+ const {error:updateError}=await supabase.from("conversations").update({assigned_to:assignment,status:"open"}).eq("id",conversationId).eq("business_id",businessId);
+ if(updateError){toast("Reply saved, but conversation assignment/status could not update: "+updateError.message)}
+ conversation.assigned_to=assignment;conversation.status="open";
+ conversation.messages=conversation.messages||[];conversation.messages.push(data);
+ renderConversations();toast("Team reply sent.");return true;
 }
 
 function renderTickets(){
@@ -102,8 +134,8 @@ async function loadWorkspace(session){
    const rows=messages.filter(m=>m.conversation_id===c.id);
    const customer=rows.find(m=>m.speaker==="customer");
    const assistant=rows.find(m=>m.speaker==="assistant");
-   return {id:c.id,agent:agentNames.get(c.executive_id)||"AI executive",q:customer?.body||"",a:assistant?.body||"",at:c.started_at};
-  }).filter(c=>c.q||c.a);
+   return {id:c.id,agent:agentNames.get(c.executive_id)||"AI executive",q:customer?.body||"",a:assistant?.body||"",at:c.started_at,status:c.status,assigned_to:c.assigned_to,messages:rows};
+  });
   render();
   document.getElementById("accountState").textContent="CLOUD WORKSPACE";
   const notice=document.getElementById("notice");
@@ -152,6 +184,8 @@ document.addEventListener("click",e=>{
  let r=e.target.closest("[data-remove]");if(r&&confirm("Delete this executive and its linked knowledge?"))deleteAgent(r.dataset.remove);
  let k=e.target.closest("[data-kremove]");if(k)deleteKnowledge(k.dataset.kremove);
  let member=e.target.closest("[data-member-remove]");if(member&&confirm("Remove this person from the workspace?"))removeTeamMember(member.dataset.memberRemove);
+ let refresh=e.target.closest("[data-refresh-conversations]");if(refresh){supabase.auth.getSession().then(({data})=>loadWorkspace(data.session));}
+ let reply=e.target.closest("[data-conversation-reply]");if(reply){const id=reply.dataset.conversationReply;const field=document.getElementById("reply-"+id);const value=field?.value.trim();if(value){reply.disabled=true;sendTeamReply(id,value).then(ok=>{reply.disabled=false;if(ok&&field)field.value="";});}}
 });
 document.querySelectorAll(".backdrop").forEach(x=>x.addEventListener("click",e=>{if(e.target===x)x.classList.remove("open")}));
 document.getElementById("agentForm").addEventListener("submit",async e=>{
@@ -218,9 +252,11 @@ async function respond(q){
  if(messageError){toast("Reply shown, but messages failed to save: "+messageError.message);return}
 if(aiResult.handoffRecommended||aiResult.mode==="handoff"){const {data:ticket,error:ticketError}=await supabase.from("support_tickets").insert({business_id:businessId,conversation_id:activeConversationId,subject:"Customer needs human follow-up",description:"Customer question: "+q+" | AI response: "+ans,priority:"normal",status:"open"}).select().single();if(ticketError){toast("Ticket creation failed: "+ticketError.message)}else{db.tickets.unshift(ticket);await supabase.from("conversations").update({status:"escalated"}).eq("id",activeConversationId);toast("Human handoff ticket created. Check Support inbox.")}}
  const saved=db.chats.find(c=>c.id===activeConversationId);
- if(saved){saved.q+=(saved.q?"\n":"")+q;saved.a+=(saved.a?"\n":"")+ans;render()}
+ if(saved){saved.q+=(saved.q?"\n":"")+q;saved.a+=(saved.a?"\n":"")+ans;saved.messages=saved.messages||[];saved.messages.push({speaker:"customer",body:q,created_at:new Date().toISOString()},{speaker:"assistant",body:ans,created_at:new Date().toISOString()});render()}
 }
 document.addEventListener("change",async e=>{
+ const convFilter=e.target.closest("#conversationFilter");if(convFilter){conversationFilter=convFilter.value;renderConversations();return}
+ const convAssignee=e.target.closest("[data-conversation-assignee]");if(convAssignee){const {error}=await supabase.from("conversations").update({assigned_to:convAssignee.value||null}).eq("id",convAssignee.dataset.conversationAssignee).eq("business_id",businessId);if(error){toast("Conversation assignment failed: "+error.message);const {data}=await supabase.auth.getSession();await loadWorkspace(data.session);return}const conv=db.chats.find(c=>c.id===convAssignee.dataset.conversationAssignee);if(conv)conv.assigned_to=convAssignee.value||null;renderConversations();toast("Conversation assignment saved.");return}
  const filter=e.target.closest("#ticketFilter");if(filter){ticketFilter=filter.value;renderTickets();return}
  const role=e.target.closest("[data-member-role]");
  if(role){const {error}=await supabase.from("business_members").update({member_role:role.value}).eq("business_id",businessId).eq("user_id",role.dataset.memberRole);if(error){toast("Role update failed: "+error.message);const {data}=await supabase.auth.getSession();await loadWorkspace(data.session);return}const person=db.members.find(m=>m.user_id===role.dataset.memberRole);if(person)person.member_role=role.value;render();toast("Team role updated.");return}
@@ -232,6 +268,12 @@ document.addEventListener("change",async e=>{
  const ticket=db.tickets.find(t=>t.id===status.dataset.ticketStatus);if(ticket)ticket.status=status.value;render();toast("Ticket updated.");
 });
 async function removeTeamMember(userId){const {error}=await supabase.from("business_members").delete().eq("business_id",businessId).eq("user_id",userId);if(error){toast("Could not remove member: "+error.message);return}db.members=db.members.filter(m=>m.user_id!==userId);render();toast("Team member removed.");}
+document.addEventListener("submit",e=>{
+ const form=e.target.closest("[data-team-reply]");if(!form)return;
+ e.preventDefault();const id=form.dataset.teamReply,field=document.getElementById("reply-"+id),value=field?.value.trim(),button=form.querySelector("button");
+ if(!value)return;if(button)button.disabled=true;
+ sendTeamReply(id,value).then(ok=>{if(button)button.disabled=false;if(ok&&field)field.value="";});
+});
 document.getElementById("chatForm").addEventListener("submit",e=>{e.preventDefault();let i=document.getElementById("chatInput"),q=i.value.trim();if(q){i.value="";respond(q)}});
 document.getElementById("listen").onclick=()=>{
  let SR=window.SpeechRecognition||window.webkitSpeechRecognition;
