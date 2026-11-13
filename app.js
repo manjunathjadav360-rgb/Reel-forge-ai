@@ -114,7 +114,7 @@ function renderTickets(){
  }).join("")||'<p class="empty">'+(db.tickets.length?"No tickets match this filter.":"No handoff tickets yet.")+'</p>';
 }
 
-async function loadWorkspace(session){
+async async function loadWorkspace(session){
  const token=++workspaceLoadToken;
  if(!session){currentUser=null;businessId=null;memberRole="viewer";db=emptyData();render();return}
  currentUser=session.user;
