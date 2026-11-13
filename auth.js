@@ -1,0 +1,102 @@
+(() => {
+  const client = window.aikivoSupabase;
+  if (!client) return;
+  const screen = document.getElementById("authScreen");
+  const form = document.getElementById("authForm");
+  const heading = document.getElementById("authHeading");
+  const sub = document.getElementById("authSub");
+  const businessWrap = document.getElementById("businessNameWrap");
+  const businessInput = document.getElementById("authBusiness");
+  const email = document.getElementById("authEmail");
+  const password = document.getElementById("authPassword");
+  const submit = document.getElementById("authSubmit");
+  const message = document.getElementById("authMessage");
+  const switchButton = document.getElementById("authSwitch");
+  const switchText = document.getElementById("authSwitchText");
+  const signOut = document.getElementById("signOut");
+  let mode = "signin";
+  let busy = false;
+
+  function say(text, error) {
+    message.textContent = text || "";
+    message.style.color = error ? "#b42318" : "#287a4b";
+  }
+  function setMode(next) {
+    mode = next;
+    const creating = mode === "signup";
+    heading.textContent = creating ? "Create your workspace" : "Sign in to AIKIVO";
+    sub.textContent = creating ? "Start with a secure business account." : "Manage your business AI from one secure workspace.";
+    businessWrap.hidden = !creating;
+    businessInput.required = creating;
+    submit.textContent = creating ? "Create account" : "Sign in";
+    switchText.textContent = creating ? "Already have an account?" : "New to AIKIVO?";
+    switchButton.textContent = creating ? "Sign in" : "Create account";
+    password.autocomplete = creating ? "new-password" : "current-password";
+    say("");
+  }
+  async function enter(session) {
+    if (!session) return;
+    screen.classList.add("hidden");
+    document.getElementById("accountState").textContent = "SIGNED IN · CLOUD WORKSPACE";
+    signOut.hidden = false;
+    try {
+      const { data, error } = await client.from("business_members")
+        .select("business_id, businesses(name)")
+        .eq("user_id", session.user.id).limit(1).maybeSingle();
+      if (error) throw error;
+      if (data && data.businesses && data.businesses.name) {
+        const raw = localStorage.getItem("aikivo_demo_data");
+        const saved = raw ? JSON.parse(raw) : {};
+        saved.business = Object.assign({}, saved.business || {}, {name:data.businesses.name});
+        localStorage.setItem("aikivo_demo_data", JSON.stringify(saved));
+        const side = document.getElementById("sideBusiness");
+        if (side) side.textContent = data.businesses.name;
+        const field = document.getElementById("businessName");
+        if (field) field.value = data.businesses.name;
+      }
+    } catch (e) {
+      document.getElementById("accountState").textContent = "SIGNED IN";
+      console.warn("Workspace lookup:", e.message);
+    }
+  }
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (busy) return;
+    busy = true; submit.disabled = true; say(mode === "signup" ? "Creating your account…" : "Signing in…");
+    try {
+      const credentials = {email:email.value.trim(), password:password.value};
+      if (mode === "signup") {
+        const business_name = businessInput.value.trim();
+        if (!business_name) throw new Error("Enter your business name.");
+        const {data,error} = await client.auth.signUp({ ...credentials, options:{data:{business_name}} });
+        if (error) throw error;
+        if (data.session) await enter(data.session);
+        else say("Account created. Check your email to confirm it, then sign in.");
+      } else {
+        const {data,error} = await client.auth.signInWithPassword(credentials);
+        if (error) throw error;
+        await enter(data.session);
+      }
+    } catch (e) { say(e.message || "Authentication failed. Please try again.", true); }
+    finally { busy = false; submit.disabled = false; }
+  });
+  switchButton.addEventListener("click", () => setMode(mode === "signin" ? "signup" : "signin"));
+  signOut.addEventListener("click", async () => {
+    signOut.disabled = true;
+    const {error} = await client.auth.signOut();
+    signOut.disabled = false;
+    if (error) { document.getElementById("accountState").textContent = "SIGN-OUT ERROR"; return; }
+    screen.classList.remove("hidden");
+    setMode("signin");
+    password.value = "";
+  });
+  client.auth.getSession().then(({data}) => {
+    if (data.session) enter(data.session);
+    else { screen.classList.remove("hidden"); signOut.hidden = true; }
+  });
+  client.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_IN" && session) enter(session);
+    if (event === "SIGNED_OUT") { screen.classList.remove("hidden"); signOut.hidden = true; }
+  });
+  setMode("signin");
+})();
