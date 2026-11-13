@@ -194,8 +194,9 @@ function renderOnboardingStep(){
   body='<label>Customer question<input id="onboardQuestion" required placeholder="What are your business hours?"></label><label>Verified business answer<textarea id="onboardAnswer" rows="4" required placeholder="Write the exact answer your business approves."></textarea></label><p class="hint">Your assistant should use approved answers and never invent business policies or prices.</p><button class="primary" type="submit">Save answer</button>';
  }else{
   const agent=db.agents.find(a=>a.id===onboardAgentId)||db.agents[0];
-  const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\/script>':"Create an AI executive first.";
-  body='<p class="hint">Preview your assistant, then publish its website chat widget.</p><div class="onboard-preview"><b>'+safe(agent?.name||"No AI executive yet")+'</b><span>'+safe(agent?.role||"")+'</span><p>'+safe(agent?.greeting||"")+'</p></div><button class="secondary" type="button" data-onboard-preview '+(!agent?'disabled':'')+'>Preview assistant</button><label>Website embed code<textarea rows="2" readonly>'+safe(snippet)+'</textarea></label><button class="primary" type="submit" '+(!agent?'disabled':'')+'>Publish chat and finish setup</button>';
+  const hasVerifiedDomain=!!agent&&db.widgetDomains.some(d=>d.executive_id===agent.id&&d.verified_at);
+  const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\\/script>':"Create an AI executive first.";
+  body='<p class="hint">Preview your assistant. Before publishing, prove ownership of your website in the launch center using a DNS TXT record.</p><div class="onboard-preview"><b>'+safe(agent?.name||"No AI executive yet")+'</b><span>'+safe(agent?.role||"")+'</span><p>'+safe(agent?.greeting||"")+'</p></div><button class="secondary" type="button" data-onboard-preview '+(!agent?'disabled':'')+'>Preview assistant</button><label>Website embed code<textarea rows="2" readonly>'+safe(snippet)+'</textarea></label><button class="secondary" type="button" data-onboard-launch>Open website launch center</button><button class="primary" type="submit" '+(!agent||!hasVerifiedDomain?'disabled':'')+'>Publish chat and finish setup</button>';
  }
  host.innerHTML='<div class="onboard-step-head"><small class="label">STEP '+onboardingStep+' OF 4</small><h2>'+titles[onboardingStep-1]+'</h2></div><form id="onboardingForm" class="onboarding-form">'+body+'</form>';
 }
@@ -222,7 +223,7 @@ async function submitOnboardingStep(event){
    const ok=await saveKnowledge(document.getElementById("onboardQuestion").value.trim(),document.getElementById("onboardAnswer").value.trim());
    if(!ok)throw new Error("Could not save the approved answer.");onboardingStep=4;
   }else{
-   const agent=db.agents.find(a=>a.id===onboardAgentId)||db.agents[0];if(!agent)throw new Error("Create an AI executive before publishing.");if(!db.knowledge.length)throw new Error("Add at least one approved knowledge item before publishing.");
+   const agent=db.agents.find(a=>a.id===onboardAgentId)||db.agents[0];if(!agent)throw new Error("Create an AI executive before publishing.");if(!db.knowledge.length)throw new Error("Add at least one approved knowledge item before publishing.");if(!db.widgetDomains.some(d=>d.executive_id===agent.id&&d.verified_at))throw new Error("Verify your website domain in the launch center before publishing.");
    const {error:widgetError}=await supabase.from("ai_executives").update({widget_enabled:true}).eq("id",agent.id).eq("business_id",businessId);if(widgetError)throw widgetError;
    const {error:doneError}=await supabase.from("businesses").update({onboarding_completed:true}).eq("id",businessId);if(doneError)throw doneError;
    agent.widget_enabled=true;db.business.onboarding_completed=true;modal("onboardingModal",false);render();page("agents");toast("AIKIVO setup complete. Website chat is published.");return;
@@ -383,6 +384,7 @@ document.addEventListener("click",e=>{
  const copyDomain=e.target.closest("[data-domain-copy]");if(copyDomain){copyDomainVerificationRecord(copyDomain.dataset.domainCopy);return;}
  let n=e.target.closest("[data-page]");if(n)page(n.dataset.page);
  if(e.target.closest("[data-onboarding-start]"))startOnboarding();
+ if(e.target.closest("[data-onboard-launch]")){modal("onboardingModal",false);launchAgentId=onboardAgentId||db.agents[0]?.id;page("agents");renderLaunchCenter();return;}
  let preview=e.target.closest("[data-onboard-preview]");if(preview){const a=db.agents.find(x=>x.id===onboardAgentId)||db.agents[0];if(a)openTest(a.id);}
  let g=e.target.closest("[data-goto]");if(g)page(g.dataset.goto);
  if(e.target.closest("[data-create]")){if(requireWorkspace())modal("createModal",true)}
