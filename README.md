@@ -59,3 +59,7 @@ Support tickets include an optional `assigned_to` workspace member. Owners and a
 ### Shared team conversation inbox
 
 The Conversations page is a shared workspace inbox. Team members can view full message threads, owners/admins can assign conversations to any owner/admin/agent, and agents can claim conversations for themselves. Agents can send team replies that are saved in the same conversation history and become part of the context for subsequent AI responses. Resolved conversations are read-only in the team inbox. The database validates conversation assignees against the same business and restricts message creation to support staff roles.
+
+
+### Website chat widget
+Each AI executive receives a public widget identifier. Owners/admins can enable or disable website chat and copy a one-line script embed from the AI executives page. Add the snippet to a business website to display a floating chat launcher. The public Edge Function validates the widget identifier and enabled state, rate-limits by hashed client IP, stores website conversations/messages in the same workspace inbox, and creates a support ticket when the AI cannot answer from approved knowledge. The widget identifier is public configuration, not a secret; the service-role key remains exclusively in Edge Function secrets. The AI model provider still requires the server-side `AIKIVO_LLM_API_KEY` secret for generated answers; without it the widget uses the approved-knowledge fallback.
