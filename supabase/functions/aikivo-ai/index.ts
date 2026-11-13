@@ -62,11 +62,36 @@ Deno.serve(async (req: Request) => {
 
     const payload = await req.json();
     const executiveId = String(payload.executiveId ?? "");
+    const conversationId = String(payload.conversationId ?? "");
     const message = String(payload.message ?? "").trim().slice(0, 2000);
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(executiveId)) {
       return json({ error: "Choose a valid AI executive." }, 400);
     }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(conversationId)) {
+      return json({ error: "Start a valid conversation first." }, 400);
+    }
     if (!message) return json({ error: "Enter a customer message." }, 400);
+
+    const { data: conversation, error: conversationError } = await supabase
+      .from("conversations")
+      .select("id,executive_id")
+      .eq("id", conversationId)
+      .eq("executive_id", executiveId)
+      .single();
+    if (conversationError || !conversation) return json({ error: "Conversation not found in your workspace." }, 404);
+
+    const { data: previousMessages, error: historyError } = await supabase
+      .from("conversation_messages")
+      .select("speaker,body")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(12);
+    if (historyError) return json({ error: "Could not load conversation history." }, 500);
+
+    const history = (previousMessages ?? []).reverse().map((item) => ({
+      role: item.speaker === "assistant" ? "assistant" : "user",
+      content: String(item.body).slice(0, 3000),
+    }));
 
     const { data: executive, error: executiveError } = await supabase
       .from("ai_executives")
@@ -128,6 +153,7 @@ Deno.serve(async (req: Request) => {
         max_tokens: 350,
         messages: [
           { role: "system", content: systemPrompt },
+          ...history,
           { role: "user", content: message },
         ],
       }),
