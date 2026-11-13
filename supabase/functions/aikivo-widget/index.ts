@@ -13,7 +13,7 @@ function corsFor(origin: string) {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Vary": "Origin" },
   });
 }
 
@@ -67,7 +67,7 @@ Deno.serve(async (req: Request) => {
   try {
     const url = Deno.env.get("SUPABASE_URL") ?? "";
     const secret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    if (!url || !secret) return jsonForOrigin({ error: "Server configuration is incomplete." }, 500);
+    if (!url || !secret) return json({ error: "Server configuration is incomplete." }, 500);
 
     const admin = createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } });
     const requestOrigin = req.headers.get("origin") ?? "";
@@ -83,7 +83,7 @@ Deno.serve(async (req: Request) => {
         .select("id").eq("widget_key", preflightKey).eq("widget_enabled", true).maybeSingle();
       if (!preflightExecutive) return new Response(null, { status: 403, headers: { "Vary": "Origin" } });
       const { data: preflightDomain } = await admin.from("widget_domains")
-        .select("id").eq("executive_id", preflightExecutive.id).eq("domain", originHost).maybeSingle();
+        .select("id").eq("executive_id", preflightExecutive.id).eq("domain", originHost).not("verified_at", "is", null).maybeSingle();
       if (!preflightDomain) return new Response(null, { status: 403, headers: { "Vary": "Origin" } });
       return new Response(null, { status: 204, headers: corsFor(requestOrigin) });
     }
@@ -96,7 +96,7 @@ Deno.serve(async (req: Request) => {
     const message = String(payload.message ?? "").trim().slice(0, 2000);
     const conversationId = String(payload.conversationId ?? "");
 
-    if (!isUuid(key)) return jsonForOrigin({ error: "This chat widget key is invalid." }, 400);
+    if (!isUuid(key)) return json({ error: "This chat widget key is invalid." }, 400);
 
     const { data: executive, error: executiveError } = await admin
       .from("ai_executives")
@@ -106,7 +106,7 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
     if (executiveError || !executive) return json({ error: "This business chat is currently unavailable." }, 404);
     const { data: allowedDomain, error: domainError } = await admin.from("widget_domains")
-      .select("id").eq("executive_id", executive.id).eq("domain", originHost).maybeSingle();
+      .select("id").eq("executive_id", executive.id).eq("domain", originHost).not("verified_at", "is", null).maybeSingle();
     if (domainError) return json({ error: "Website security settings could not be checked." }, 503);
     if (!allowedDomain) return new Response(JSON.stringify({ error: "This website is not approved for this chat widget." }), {
       status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Vary": "Origin" },
