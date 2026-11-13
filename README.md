@@ -7,7 +7,7 @@ This repository has been repurposed from ReelForge AI to AIKIVO.
 - Supabase email/password account creation and sign-in.
 - Signup trigger creates a business workspace and owner membership.
 - Multi-tenant PostgreSQL tables with Row Level Security.
-- Cloud-saved business profile, AI executives, knowledge items and multi-turn test conversations.
+- Cloud-saved business profile, AI executives, knowledge items, multi-turn test conversations and a human handoff inbox.
 - Browser voice playground using Web Speech API where supported.
 
 ## AI engine
