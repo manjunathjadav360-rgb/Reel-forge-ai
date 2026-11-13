@@ -261,7 +261,7 @@ document.addEventListener("click",e=>{
  let preview=e.target.closest("[data-onboard-preview]");if(preview){const a=db.agents.find(x=>x.id===onboardAgentId)||db.agents[0];if(a)openTest(a.id);}
  let g=e.target.closest("[data-goto]");if(g)page(g.dataset.goto);
  if(e.target.closest("[data-create]")){if(requireWorkspace())modal("createModal",true)}
- if(e.target.closest("[data-close]"))document.querySelectorAll(".backdrop").forEach(x=>x.classList.remove("open"));
+ let closeButton=e.target.closest("[data-close]");if(closeButton)closeButton.closest(".backdrop")?.classList.remove("open");
  let t=e.target.closest("[data-test]");if(t)openTest(t.dataset.test);
  let widgetToggle=e.target.closest("[data-widget-toggle]");if(widgetToggle)toggleWebsiteWidget(widgetToggle.dataset.widgetToggle);
  let widgetCopy=e.target.closest("[data-copy-widget]");if(widgetCopy)copyWebsiteWidget(widgetCopy.dataset.copyWidget);
