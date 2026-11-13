@@ -253,11 +253,19 @@ async function deleteAgent(id){
  if(error){toast("Could not delete executive: "+error.message);return}
  db.agents=db.agents.filter(a=>a.id!==id);render();toast("AI executive deleted");
 }
+async function refreshSemanticIndex(){
+ if(!businessId||!["owner","admin"].includes(memberRole))return;
+ try{
+  const {data,error}=await supabase.functions.invoke("aikivo-embed",{body:{businessId}});
+  if(error||data?.error){console.warn("Semantic index refresh deferred; keyword search remains available.",data?.error||error?.message);return}
+  if(data?.indexed)console.info("AIKIVO semantic index refreshed:",data.indexed,"entries");
+ }catch(error){console.warn("Semantic index refresh deferred.",error)}
+}
 async function saveKnowledge(q,a){
  if(!requireWorkspace())return;
  const {data,error}=await supabase.from("knowledge_items").insert({business_id:businessId,question:q,answer:a}).select().single();
  if(error){toast("Could not save knowledge: "+error.message);return false}
- db.knowledge.push({id:data.id,q:data.question,a:data.answer});render();toast("Knowledge saved to cloud");return true;
+ db.knowledge.push({id:data.id,q:data.question,a:data.answer});render();void refreshSemanticIndex();toast("Knowledge saved to cloud");return true;
 }
 async function trainKnowledge(sourceType,payload){
  if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return false;
