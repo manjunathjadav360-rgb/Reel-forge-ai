@@ -2,6 +2,7 @@ const supabase = window.aikivoSupabase;
 const emptyData = () => ({business:{name:"My Business",industry:"Other",website:"",language:"English"},agents:[],knowledge:[],chats:[]});
 let db = emptyData();
 let active = null;
+let activeConversationId = null;
 let rec = null;
 let currentUser = null;
 let businessId = null;
@@ -133,35 +134,40 @@ document.getElementById("businessForm").addEventListener("submit",async e=>{
 });
 document.getElementById("dismiss").onclick=()=>document.getElementById("notice").remove();
 document.getElementById("menu").onclick=()=>document.getElementById("sidebar").classList.toggle("open");
-function openTest(id){
- active=id;let a=db.agents.find(x=>x.id===id);if(!a)return;
+async function openTest(id){
+ active=id;activeConversationId=null;let a=db.agents.find(x=>x.id===id);if(!a)return;
  document.getElementById("testTitle").textContent="Test "+a.name;
  document.getElementById("chat").innerHTML='<div class="bubble bot">'+safe(a.greeting)+'</div>';
- document.getElementById("voiceStatus").textContent="AI replies run through your secure workspace AI engine. This test does not place a phone call.";
+ document.getElementById("voiceStatus").textContent="Starting a saved conversation…";
  modal("testModal",true);
+ const {data,error}=await supabase.from("conversations").insert({business_id:businessId,executive_id:a.id,channel:"test",status:"open"}).select("id,started_at").single();
+ if(error){document.getElementById("voiceStatus").textContent="Could not start a saved conversation: "+error.message;toast("Conversation could not be started.");return}
+ activeConversationId=data.id;
+ db.chats.push({id:data.id,agent:a.name,q:"",a:"",at:data.started_at||new Date().toISOString()});render();
+ document.getElementById("voiceStatus").textContent="Conversation ready · this test keeps context across messages. No phone call is placed.";
 }
 function bubble(s,type){let d=document.createElement("div");d.className="bubble "+type;d.textContent=s;let c=document.getElementById("chat");c.appendChild(d);c.scrollTop=c.scrollHeight}
 function say(s,lang){if(!("speechSynthesis"in window))return;let u=new SpeechSynthesisUtterance(s);u.lang=({English:"en-IN",Hindi:"hi-IN",Gujarati:"gu-IN",Kannada:"kn-IN"})[lang]||"en-IN";speechSynthesis.cancel();speechSynthesis.speak(u)}
 async function respond(q){
  if(!requireWorkspace())return;
  let a=db.agents.find(x=>x.id===active);if(!a)return;
+ if(!activeConversationId){toast("Wait for the conversation to finish starting.");return}
  bubble(q,"human");
  const status=document.getElementById("voiceStatus");
  status.textContent="AIKIVO is preparing a reply…";
- const {data:aiResult,error:aiError}=await supabase.functions.invoke("aikivo-ai",{body:{executiveId:a.id,message:q}});
+ const {data:aiResult,error:aiError}=await supabase.functions.invoke("aikivo-ai",{body:{executiveId:a.id,conversationId:activeConversationId,message:q}});
  if(aiError||!aiResult?.answer){status.textContent="AI reply failed. Please try again.";toast(aiResult?.error||aiError?.message||"AI engine unavailable.");return}
  const ans=aiResult.answer;
  if(!aiResult.providerConfigured){status.textContent="Knowledge-base backup mode · AI model provider is not configured yet."}
  else{status.textContent="AI engine connected · "+a.name}
  bubble(ans,"bot");say(ans,a.language);
- const {data:conversation,error:conversationError}=await supabase.from("conversations").insert({business_id:businessId,executive_id:a.id,channel:"test",status:"resolved"}).select().single();
- if(conversationError){toast("Reply shown, but conversation was not saved: "+conversationError.message);return}
  const {error:messageError}=await supabase.from("conversation_messages").insert([
-  {conversation_id:conversation.id,speaker:"customer",body:q},
-  {conversation_id:conversation.id,speaker:"assistant",body:ans}
+  {conversation_id:activeConversationId,speaker:"customer",body:q},
+  {conversation_id:activeConversationId,speaker:"assistant",body:ans}
  ]);
- if(messageError){toast("Conversation created, but messages failed to save: "+messageError.message);return}
- db.chats.push({id:conversation.id,agent:a.name,q,a:ans,at:conversation.started_at||new Date().toISOString()});render();
+ if(messageError){toast("Reply shown, but messages failed to save: "+messageError.message);return}
+ const saved=db.chats.find(c=>c.id===activeConversationId);
+ if(saved){saved.q+=(saved.q?"\n":"")+q;saved.a+=(saved.a?"\n":"")+ans;render()}
 }
 document.getElementById("chatForm").addEventListener("submit",e=>{e.preventDefault();let i=document.getElementById("chatInput"),q=i.value.trim();if(q){i.value="";respond(q)}});
 document.getElementById("listen").onclick=()=>{
