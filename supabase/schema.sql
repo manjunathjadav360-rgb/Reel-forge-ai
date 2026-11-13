@@ -344,3 +344,24 @@ with check (
 
 -- Efficient chronological loading of shared conversation threads.
 create index if not exists conversation_messages_conversation_created_idx on public.conversation_messages(conversation_id,created_at asc);
+
+
+-- Public website chat widget configuration
+alter table public.ai_executives
+  add column if not exists widget_key uuid not null default gen_random_uuid(),
+  add column if not exists widget_enabled boolean not null default false;
+create unique index if not exists ai_executives_widget_key_uidx
+  on public.ai_executives(widget_key);
+
+-- Private rate-limit records are only accessed by the server-side Edge Function.
+create table if not exists public.widget_rate_limits (
+  id uuid primary key default gen_random_uuid(),
+  widget_key uuid not null,
+  ip_hash text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists widget_rate_limits_lookup_idx
+  on public.widget_rate_limits(widget_key,ip_hash,created_at desc);
+alter table public.widget_rate_limits enable row level security;
+revoke all on public.widget_rate_limits from anon,authenticated;
+grant all on public.widget_rate_limits to service_role;
