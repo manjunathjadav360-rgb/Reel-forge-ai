@@ -127,3 +127,19 @@ for all to authenticated using (
 -- Trusted server-side onboarding must create a business and its first owner membership.
 -- This is intentionally not granted to browser clients in this starter schema.
 -- Never trust editable user_metadata for authorization and never expose service_role keys in the browser.
+
+-- Least-privilege Data API access. RLS policies above enforce tenant isolation.
+revoke all on table public.businesses, public.business_members, public.ai_executives,
+  public.knowledge_items, public.conversations, public.conversation_messages,
+  public.support_tickets from anon;
+revoke all on table public.businesses, public.business_members, public.ai_executives,
+  public.knowledge_items, public.conversations, public.conversation_messages,
+  public.support_tickets from authenticated;
+
+grant select, update on table public.businesses to authenticated;
+grant select on table public.business_members to authenticated;
+grant select, insert, update, delete on table public.ai_executives to authenticated;
+grant select, insert, update, delete on table public.knowledge_items to authenticated;
+grant select, insert on table public.conversations to authenticated;
+grant select, insert on table public.conversation_messages to authenticated;
+grant select, insert, update, delete on table public.support_tickets to authenticated;
