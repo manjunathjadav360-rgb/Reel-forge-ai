@@ -47,3 +47,5 @@ Enable GitHub Pages in repository Settings → Pages and verify the Pages workfl
 - Owners can invite admins, agents and viewers. Admins can invite agents and viewers.
 - Team role changes and removals are protected by RLS. Owner accounts cannot be removed or demoted through the dashboard.
 - Invitations use Supabase Auth email delivery. Configure the project's Auth email/SMTP settings and allow the GitHub Pages redirect URL if delivery is not enabled.
+
+- This first version supports inviting new email addresses only; existing AIKIVO accounts need a future workspace-switching flow before joining another business.
