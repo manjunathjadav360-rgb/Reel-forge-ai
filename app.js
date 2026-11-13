@@ -5,7 +5,6 @@ let active = null;
 let rec = null;
 let currentUser = null;
 let businessId = null;
-let loadingWorkspace = false;
 let workspaceLoadToken = 0;
 
 function safe(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
@@ -32,18 +31,16 @@ async function loadWorkspace(session){
  const token=++workspaceLoadToken;
  if(!session){currentUser=null;businessId=null;db=emptyData();render();return}
  currentUser=session.user;
- if(loadingWorkspace)return;
- loadingWorkspace=true;
  try{
   const {data:membership,error:memberError}=await supabase.from("business_members").select("business_id,businesses(id,name,industry,website,default_language)").eq("user_id",session.user.id).limit(1).maybeSingle();
   if(memberError)throw memberError;
   if(!membership||!membership.business_id)throw new Error("Your account has no workspace membership. Please contact support.");
-  businessId=membership.business_id;
+  const targetBusinessId=membership.business_id;
   const business=Array.isArray(membership.businesses)?membership.businesses[0]:membership.businesses;
   const [agentsRes,knowledgeRes,conversationsRes]=await Promise.all([
-   supabase.from("ai_executives").select("*").eq("business_id",businessId).order("created_at",{ascending:true}),
-   supabase.from("knowledge_items").select("*").eq("business_id",businessId).order("created_at",{ascending:true}),
-   supabase.from("conversations").select("*").eq("business_id",businessId).order("started_at",{ascending:false})
+   supabase.from("ai_executives").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
+   supabase.from("knowledge_items").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
+   supabase.from("conversations").select("*").eq("business_id",targetBusinessId).order("started_at",{ascending:false})
   ]);
   if(agentsRes.error)throw agentsRes.error;
   if(knowledgeRes.error)throw knowledgeRes.error;
@@ -56,6 +53,7 @@ async function loadWorkspace(session){
    messages=data||[];
   }
   if(token!==workspaceLoadToken)return;
+  businessId=targetBusinessId;
   db.business={name:business?.name||"My Business",industry:business?.industry||"Other",website:business?.website||"",language:business?.default_language||"English"};
   db.agents=(agentsRes.data||[]).map(a=>({id:a.id,name:a.name,role:a.role,greeting:a.greeting,language:a.language}));
   db.knowledge=(knowledgeRes.data||[]).map(k=>({id:k.id,q:k.question,a:k.answer}));
@@ -73,7 +71,7 @@ async function loadWorkspace(session){
  }catch(error){
   console.error("AIKIVO workspace load:",error);
   toast("Workspace load failed: "+(error.message||"Please refresh."));
- }finally{loadingWorkspace=false}
+ }
 }
 async function saveAgent(values){
  if(!requireWorkspace())return;
