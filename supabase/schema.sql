@@ -249,3 +249,6 @@ using(private.is_business_admin(business_id) and user_id<>(select auth.uid()) an
 grant select on public.business_members to authenticated;
 grant update(member_role) on public.business_members to authenticated;
 grant delete on public.business_members to authenticated;
+
+drop policy if exists "service role manages invitations" on public.business_invitations;
+create policy "service role manages invitations" on public.business_invitations for all to service_role using (true) with check (true);
