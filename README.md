@@ -63,3 +63,7 @@ The Conversations page is a shared workspace inbox. Team members can view full m
 
 ### Website chat widget
 Each AI executive receives a public widget identifier. Owners/admins can enable or disable website chat and copy a one-line script embed from the AI executives page. Add the snippet to a business website to display a floating chat launcher. The public Edge Function validates the widget identifier and enabled state, rate-limits by hashed client IP, stores website conversations/messages in the same workspace inbox, and creates a support ticket when the AI cannot answer from approved knowledge. The widget identifier is public configuration, not a secret; the service-role key remains exclusively in Edge Function secrets. The AI model provider still requires the server-side `AIKIVO_LLM_API_KEY` secret for generated answers; without it the widget uses the approved-knowledge fallback.
+
+
+### Self-serve business onboarding
+New business owners can complete a guided setup in the dashboard: business profile, first AI executive, first approved knowledge answer, assistant preview, and website-chat publishing. Completion is saved on the business workspace row. The wizard is owner/admin-only; existing workspaces with assistants or knowledge were marked as already onboarded when the column was introduced.
