@@ -10,6 +10,16 @@ This repository has been repurposed from ReelForge AI to AIKIVO.
 - Cloud-saved business profile, AI executives, knowledge items and test conversations.
 - Browser voice playground using Web Speech API where supported.
 
+## AI engine
+The authenticated Supabase Edge Function `aikivo-ai` is deployed with JWT verification enabled. It loads only the signed-in workspace's AI executive and approved knowledge, then uses a server-side OpenAI-compatible chat-completions endpoint when configured. Without a provider key, it uses a conservative FAQ match and offers human follow-up rather than inventing business facts.
+
+To enable generative replies, add these **Edge Function secrets** in the Supabase project:
+- `AIKIVO_LLM_API_KEY` — provider API key (keep it server-side; never commit it).
+- `AIKIVO_LLM_BASE_URL` — optional chat-completions endpoint; defaults to OpenAI's endpoint.
+- `AIKIVO_LLM_MODEL` — optional model name; defaults to `gpt-4o-mini`.
+
+The provider key has not been configured yet, so the current test uses knowledge-base backup mode until the business owner configures a provider. Provider usage may incur separate charges.
+
 ## Important current limitations
 - The browser voice playground is not a production AI agent and does not place or receive phone calls.
 - Real phone calls require a telephony provider, secure server-side endpoint and real-time audio streaming.
