@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#ffffff"><title>Chat with us</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#172238;background:#fff}
+.widget{height:100%;display:flex;flex-direction:column;background:#fff}.head{padding:16px 18px;background:#172238;color:#fff}.head strong{display:block;font-size:15px}.head small{display:block;color:#c8d0dc;margin-top:4px;font-size:11px}.thread{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px;background:#f7f8fa}.bubble{max-width:88%;padding:10px 12px;border-radius:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.bot{align-self:flex-start;background:#fff;border:1px solid #e6e9ef;border-bottom-left-radius:4px}.user{align-self:flex-end;background:#e8eef8;border-bottom-right-radius:4px}.status{min-height:22px;padding:4px 14px;color:#748094;font-size:10px;background:#f7f8fa}.form{display:flex;gap:8px;padding:12px;border-top:1px solid #e8ebf0}.form input{min-width:0;flex:1;border:1px solid #d9dee7;border-radius:8px;padding:11px;font:13px system-ui;outline:none}.form button{border:0;border-radius:8px;background:#172238;color:#fff;padding:0 15px;font-weight:600}.form button:disabled{opacity:.5}.foot{text-align:center;padding:5px;color:#a0a7b4;font-size:9px}.error{color:#b42318}
+</style>
+</head>
+<body><main class="widget"><header class="head"><strong id="title">Customer support</strong><small>Typically replies instantly</small></header><div id="thread" class="thread" aria-live="polite"><div class="bubble bot">Connecting to support…</div></div><div id="status" class="status"></div><form id="form" class="form"><input id="message" maxlength="2000" autocomplete="off" placeholder="Write your message…" required><button id="send" type="submit">Send</button></form><div class="foot">Powered by AIKIVO</div></main>
+<script src="supabase/config.js"></script><script src="widget-client.js"></script></body></html>
