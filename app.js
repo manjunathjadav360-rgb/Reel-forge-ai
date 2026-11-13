@@ -8,6 +8,7 @@ let currentUser = null;
 let businessId = null;
 let memberRole = "viewer";
 let workspaceLoadToken = 0;
+let ticketFilter = "all";
 
 function safe(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function toast(s){let t=document.getElementById("toast");t.textContent=s;t.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#172238;color:white;padding:10px 15px;border-radius:8px;font-size:11px;z-index:50";setTimeout(()=>t.style.cssText="",2600)}
@@ -38,8 +39,27 @@ function render(){
  document.getElementById("overviewAgents").innerHTML=db.agents.length?db.agents.slice(0,3).map(a=>'<p>◉　<b>'+safe(a.name)+'</b> — '+safe(a.role)+' <button class="link" data-test="'+a.id+'">Test</button></p>').join(""):"No AI executives yet. Create your first assistant.";
  document.getElementById("knowledgeList").innerHTML=db.knowledge.map(k=>'<div class="knowledge-item"><b>'+safe(k.q)+'</b><p>'+safe(k.a)+'</p><button class="delete" data-kremove="'+k.id+'">Remove</button></div>').join("")||'<p class="empty">No knowledge items added.</p>';
  document.getElementById("conversationList").innerHTML=db.chats.slice().reverse().map(c=>'<div class="knowledge-item"><b>'+safe(c.agent)+'</b><p><b>Customer:</b> '+safe(c.q)+'</p><p><b>AI:</b> '+safe(c.a)+'</p><small>'+new Date(c.at).toLocaleString()+'</small></div>').join("")||"No conversations yet. Run a voice test to see it here.";
- document.getElementById("ticketList").innerHTML=db.tickets.map(t=>'<div class="knowledge-item"><div class="ticket-top"><b>'+safe(t.subject)+'</b><select data-ticket-status="'+t.id+'"><option value="open" '+(t.status==="open"?"selected":"")+'>Open</option><option value="in_progress" '+(t.status==="in_progress"?"selected":"")+'>In progress</option><option value="waiting_customer" '+(t.status==="waiting_customer"?"selected":"")+'>Waiting</option><option value="resolved" '+(t.status==="resolved"?"selected":"")+'>Resolved</option><option value="closed" '+(t.status==="closed"?"selected":"")+'>Closed</option></select></div><p>'+safe(t.description||"")+'</p><small>'+new Date(t.created_at).toLocaleString()+'</small></div>').join("")||'<p class="empty">No handoff tickets yet.</p>';
+  renderTickets();
 }
+
+function renderTickets(){
+ const roster=db.members.filter(m=>["owner","admin","agent"].includes(m.member_role));
+ const visible=db.tickets.filter(t=>ticketFilter==="mine"?t.assigned_to===currentUser?.id:ticketFilter==="unassigned"?!t.assigned_to:true);
+ const open=db.tickets.filter(t=>!["resolved","closed"].includes(t.status)).length;
+ const mine=db.tickets.filter(t=>t.assigned_to===currentUser?.id&&!["resolved","closed"].includes(t.status)).length;
+ const summary=document.getElementById("ticketSummary");
+ if(summary)summary.textContent=db.tickets.length+" total · "+open+" active · "+mine+" assigned to you";
+ const canManage=["owner","admin","agent"].includes(memberRole);
+ document.getElementById("ticketList").innerHTML=visible.map(t=>{
+  const current=db.members.find(m=>m.user_id===t.assigned_to);
+  const label=current?(current.display_name||current.email||"Team member"):(t.assigned_to?"Assigned teammate":"Unassigned");
+  const choices=memberRole==="owner"||memberRole==="admin"?roster:(memberRole==="agent"?roster.filter(m=>m.user_id===currentUser?.id):[]);
+  let options='<option value="">Unassigned</option>'+choices.map(m=>'<option value="'+m.user_id+'" '+(t.assigned_to===m.user_id?"selected":"")+'>'+safe(m.display_name||m.email||"Team member")+' · '+safe(m.member_role)+'</option>').join("");
+  if(t.assigned_to&&!choices.some(m=>m.user_id===t.assigned_to))options+='<option value="'+t.assigned_to+'" selected>Current assignee</option>';
+  return '<div class="knowledge-item ticket-card"><div class="ticket-top"><b>'+safe(t.subject)+'</b><select data-ticket-status="'+t.id+'" '+(!canManage?'disabled':'')+'><option value="open" '+(t.status==="open"?"selected":"")+'>Open</option><option value="in_progress" '+(t.status==="in_progress"?"selected":"")+'>In progress</option><option value="waiting_customer" '+(t.status==="waiting_customer"?"selected":"")+'>Waiting</option><option value="resolved" '+(t.status==="resolved"?"selected":"")+'>Resolved</option><option value="closed" '+(t.status==="closed"?"selected":"")+'>Closed</option></select></div><p>'+safe(t.description||"")+'</p><div class="ticket-meta"><span>Assigned: <b>'+safe(label)+'</b></span><span>'+new Date(t.created_at).toLocaleString()+'</span></div><label class="ticket-assignment">Assign to<select data-ticket-assignee="'+t.id+'" '+(!canManage?'disabled':'')+'>'+options+'</select></label></div>';
+ }).join("")||'<p class="empty">'+(db.tickets.length?"No tickets match this filter.":"No handoff tickets yet.")+'</p>';
+}
+
 async function loadWorkspace(session){
  const token=++workspaceLoadToken;
  if(!session){currentUser=null;businessId=null;memberRole="viewer";db=emptyData();render();return}
@@ -200,7 +220,17 @@ if(aiResult.handoffRecommended||aiResult.mode==="handoff"){const {data:ticket,er
  const saved=db.chats.find(c=>c.id===activeConversationId);
  if(saved){saved.q+=(saved.q?"\n":"")+q;saved.a+=(saved.a?"\n":"")+ans;render()}
 }
-document.addEventListener("change",async e=>{const role=e.target.closest("[data-member-role]");if(role){const {error}=await supabase.from("business_members").update({member_role:role.value}).eq("business_id",businessId).eq("user_id",role.dataset.memberRole);if(error){toast("Role update failed: "+error.message);const {data}=await supabase.auth.getSession();await loadWorkspace(data.session);return}const person=db.members.find(m=>m.user_id===role.dataset.memberRole);if(person)person.member_role=role.value;render();toast("Team role updated.");return}const s=e.target.closest("[data-ticket-status]");if(!s)return;const {error}=await supabase.from("support_tickets").update({status:s.value,updated_at:new Date().toISOString()}).eq("id",s.dataset.ticketStatus);if(error){toast("Ticket update failed: "+error.message);return}const t=db.tickets.find(x=>x.id===s.dataset.ticketStatus);if(t)t.status=s.value;render();toast("Ticket updated.")});
+document.addEventListener("change",async e=>{
+ const filter=e.target.closest("#ticketFilter");if(filter){ticketFilter=filter.value;renderTickets();return}
+ const role=e.target.closest("[data-member-role]");
+ if(role){const {error}=await supabase.from("business_members").update({member_role:role.value}).eq("business_id",businessId).eq("user_id",role.dataset.memberRole);if(error){toast("Role update failed: "+error.message);const {data}=await supabase.auth.getSession();await loadWorkspace(data.session);return}const person=db.members.find(m=>m.user_id===role.dataset.memberRole);if(person)person.member_role=role.value;render();toast("Team role updated.");return}
+ const assignee=e.target.closest("[data-ticket-assignee]");
+ if(assignee){const {error}=await supabase.from("support_tickets").update({assigned_to:assignee.value||null,updated_at:new Date().toISOString()}).eq("id",assignee.dataset.ticketAssignee).eq("business_id",businessId);if(error){toast("Assignment failed: "+error.message);const {data}=await supabase.auth.getSession();await loadWorkspace(data.session);return}const ticket=db.tickets.find(t=>t.id===assignee.dataset.ticketAssignee);if(ticket)ticket.assigned_to=assignee.value||null;renderTickets();toast("Ticket assignment saved.");return}
+ const status=e.target.closest("[data-ticket-status]");if(!status)return;
+ const {error}=await supabase.from("support_tickets").update({status:status.value,updated_at:new Date().toISOString()}).eq("id",status.dataset.ticketStatus).eq("business_id",businessId);
+ if(error){toast("Ticket update failed: "+error.message);return}
+ const ticket=db.tickets.find(t=>t.id===status.dataset.ticketStatus);if(ticket)ticket.status=status.value;render();toast("Ticket updated.");
+});
 async function removeTeamMember(userId){const {error}=await supabase.from("business_members").delete().eq("business_id",businessId).eq("user_id",userId);if(error){toast("Could not remove member: "+error.message);return}db.members=db.members.filter(m=>m.user_id!==userId);render();toast("Team member removed.");}
 document.getElementById("chatForm").addEventListener("submit",e=>{e.preventDefault();let i=document.getElementById("chatInput"),q=i.value.trim();if(q){i.value="";respond(q)}});
 document.getElementById("listen").onclick=()=>{
