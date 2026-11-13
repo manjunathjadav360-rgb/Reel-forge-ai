@@ -254,15 +254,55 @@ drop policy if exists "service role manages invitations" on public.business_invi
 create policy "service role manages invitations" on public.business_invitations for all to service_role using (true) with check (true);
 
 
+
 -- Support ticket ownership / workload management
 alter table public.support_tickets add column if not exists assigned_to uuid;
--- Composite FK prevents assigning a ticket to a user outside its business.
--- ON DELETE SET NULL clears assignments when a teammate is removed.
-alter table public.support_tickets
-  add constraint support_tickets_business_assignee_fkey
-  foreign key (business_id, assigned_to)
-  references public.business_members (business_id, user_id)
-  on delete set null (assigned_to);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'support_tickets_business_assignee_fkey'
+      and conrelid = 'public.support_tickets'::regclass
+  ) then
+    alter table public.support_tickets
+      add constraint support_tickets_business_assignee_fkey
+      foreign key (business_id, assigned_to)
+      references public.business_members (business_id, user_id)
+      on delete set null (assigned_to);
+  end if;
+end $$;
+
 create index if not exists support_tickets_business_assignee_status_idx
   on public.support_tickets (business_id, assigned_to, status, created_at desc);
--- A database trigger validates that the assignee has owner, admin, or agent role.
+
+create or replace function public.validate_support_ticket_assignee()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.assigned_to is null then
+    return new;
+  end if;
+
+  if not exists (
+    select 1
+    from public.business_members bm
+    where bm.business_id = new.business_id
+      and bm.user_id = new.assigned_to
+      and bm.member_role in ('owner', 'admin', 'agent')
+  ) then
+    raise exception 'Assignee must be an owner, admin, or agent in this workspace'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists support_tickets_validate_assignee on public.support_tickets;
+create trigger support_tickets_validate_assignee
+before insert or update of business_id, assigned_to
+on public.support_tickets
+for each row execute function public.validate_support_ticket_assignee();
