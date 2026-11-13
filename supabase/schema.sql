@@ -1,5 +1,6 @@
 -- AIKIVO multi-tenant starter schema. Review and test before production.
 create extension if not exists pgcrypto;
+create extension if not exists vector with schema extensions;
 
 create table if not exists public.businesses (
   id uuid primary key default gen_random_uuid(),
