@@ -185,7 +185,7 @@ document.addEventListener("click",e=>{
  let k=e.target.closest("[data-kremove]");if(k)deleteKnowledge(k.dataset.kremove);
  let member=e.target.closest("[data-member-remove]");if(member&&confirm("Remove this person from the workspace?"))removeTeamMember(member.dataset.memberRemove);
  let refresh=e.target.closest("[data-refresh-conversations]");if(refresh){supabase.auth.getSession().then(({data})=>loadWorkspace(data.session));}
- let reply=e.target.closest("[data-conversation-reply]");if(reply){const id=reply.dataset.conversationReply;const field=document.getElementById("reply-"+id);const value=field?.value.trim();if(value){reply.disabled=true;sendTeamReply(id,value).then(ok=>{reply.disabled=false;if(ok&&field)field.value="";});}}
+
 });
 document.querySelectorAll(".backdrop").forEach(x=>x.addEventListener("click",e=>{if(e.target===x)x.classList.remove("open")}));
 document.getElementById("agentForm").addEventListener("submit",async e=>{
