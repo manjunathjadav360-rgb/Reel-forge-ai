@@ -29,9 +29,9 @@
 ## Guided website launch center
 - Workspace owners/admins get a launch checklist for business profile, selected AI executive, approved knowledge and publication state.
 - Publishing is blocked until an AI executive and at least one approved knowledge item exist.
-- The dashboard generates the selected assistant's embed snippet, copy action and live widget preview link.
+- The dashboard generates the selected assistant's embed snippet, copy action and link to open the business website for testing after installation.
 - Installation instructions explain the general HTML placement and note that site-builder menu names vary.
-- The widget remains hosted on GitHub Pages and uses the Supabase Edge Function. A production custom-domain allowlist, per-customer domain verification and a managed production hosting SLA are not included yet.
+- The widget remains hosted on GitHub Pages and uses the Supabase Edge Function. Exact-hostname allowlists and DNS TXT ownership verification are now implemented. A managed production hosting SLA is not included.
 
 
 ## Verified website domains and widget origin security
