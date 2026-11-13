@@ -340,3 +340,7 @@ with check (
  speaker in ('customer','assistant','agent','admin','owner')
  and exists(select 1 from public.conversations c join public.business_members bm on bm.business_id=c.business_id where c.id=conversation_messages.conversation_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent'))
 );
+
+
+-- Efficient chronological loading of shared conversation threads.
+create index if not exists conversation_messages_conversation_created_idx on public.conversation_messages(conversation_id,created_at asc);
