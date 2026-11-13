@@ -259,7 +259,7 @@ async function trainKnowledge(sourceType,payload){
  db.knowledgeSources.unshift(source);
  const {data:items}=await supabase.from("knowledge_items").select("*").eq("source_id",source.id).order("created_at",{ascending:true});
  db.knowledge.push(...(items||[]).map(k=>({id:k.id,q:k.question,a:k.answer,source_id:k.source_id})));
- render();toast("Source added to your AI knowledge.");return true;
+ render();toast("Imported "+(data.pageCount?data.pageCount+" website pages":data.itemCount+" knowledge sections")+".");return true;
 }
 async function deleteKnowledgeSource(id){
  if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
@@ -320,11 +320,20 @@ document.getElementById("websiteTrainForm").addEventListener("submit",async e=>{
 });
 document.getElementById("textTrainForm").addEventListener("submit",async e=>{
  e.preventDefault();const file=document.getElementById("knowledgeFile").files[0],button=e.target.querySelector("button");if(!file)return;
- if(!/\.(txt|md)$/i.test(file.name)||file.size>100000){toast("Upload a TXT or Markdown file under 100 KB.");return;}
+ const ext=file.name.toLowerCase().split(".").pop();
+ if(!["txt","md","pdf","docx"].includes(ext)){toast("Choose a TXT, Markdown, PDF or DOCX document.");return;}
+ if((["txt","md"].includes(ext)&&file.size>100000)||file.size>5*1024*1024){toast("Text files: up to 100 KB. PDF/DOCX: up to 5 MB.");return;}
  button.disabled=true;button.textContent="Importing…";
- try{const content=await file.text();const saved=await trainKnowledge("text_file",{title:file.name,fileName:file.name,content});if(saved)e.target.reset();}
- catch(err){toast("Could not read this file.");}
- finally{button.disabled=false;button.textContent="Import file";}
+ try{
+  if(["txt","md"].includes(ext)){
+   const content=await file.text();const saved=await trainKnowledge("text_file",{title:file.name,fileName:file.name,content});if(saved)e.target.reset();
+  }else{
+   const bytes=new Uint8Array(await file.arrayBuffer());let binary="";
+   for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+   const fileBase64=btoa(binary);const saved=await trainKnowledge("text_file",{title:file.name,fileName:file.name,fileBase64});if(saved)e.target.reset();
+  }
+ }catch(err){toast("Could not read this document.");}
+ finally{button.disabled=false;button.textContent="Import document";}
 });
 document.getElementById("inviteForm").addEventListener("submit",async e=>{
  e.preventDefault();if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
