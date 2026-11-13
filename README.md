@@ -1,32 +1,27 @@
-# ReelForge AI
+# AIKIVO — AI Voice Customer Care
 
-A phone-first music-video studio. Add a soundtrack, choose a visual direction, add an optional title or your own footage, and create a 60-second vertical music video.
+This repository has been repurposed from ReelForge AI to AIKIVO.
 
-## Included in this release
+## Current release: browser prototype
+- Responsive self-service business dashboard
+- Create and delete AI executive profiles
+- Business profile and knowledge-base editor
+- Browser voice test using Web Speech API where supported
+- Speech synthesis replies where supported
+- Local conversation history
 
-- Local audio selection and playback
-- Four visual directions: Cinematic, Typography, Dreamscape and Pulse
-- Six automatically sequenced visual scenes with transitions
-- Moving landscapes, city lights, stars, ocean textures, silhouettes and atmospheric light
-- Audio-reactive motion and waveform accents using the live audio analyser
-- Optional user footage with subtle camera movement and cinematic overlay
-- Custom title treatment
-- Optional lyric text input: pasted lines are sequenced across the 60-second cut, displayed as timed captions and used for simple keyword-based visual mood selection
-- Exact 60-second render: longer songs are cut at 60 seconds; shorter songs loop to fill the cut
-- 720 × 1280 vertical video export with synchronized audio as WebM
-- Responsive phone-first interface
-- Local browser processing; selected files are not uploaded
+## Important limitations
+This is a **local browser prototype**, not a production multi-tenant SaaS. Data stays in the current browser and is not shared across devices or businesses. Browser speech recognition and language support vary. No real telephone calls, telephony routing, shared authentication, cloud persistence, live human handover or production AI orchestration are connected. Do not enter real customer or sensitive business information.
 
-## Run and deploy
+## Production work still required
+1. Supabase Auth and trusted business onboarding.
+2. PostgreSQL multi-tenant data access with tested Row Level Security.
+3. Secure server-side AI orchestration and secrets management.
+4. Telephony provider, inbound number and real-time audio streaming.
+5. Consent, privacy, retention, monitoring, abuse prevention and billing.
+6. End-to-end security and call quality testing.
 
-Open `index.html` through GitHub Pages or a local static web server. For export, use a recent Chrome browser and keep the tab open while the 60-second render completes.
+A starter schema is in `supabase/schema.sql`. It is not automatically applied and does not connect this static website to Supabase.
 
-To enable deployment, open **Settings → Pages → Build and deployment → Source → GitHub Actions**. The included workflow deploys changes pushed to `main`.
-
-## Honest capability boundary
-
-This release creates an actual animated music-video composition, not AI-generated live-action footage. Lyrics are not automatically transcribed from audio. When users paste lyrics, lines are evenly sequenced across the 60-second cut and simple keyword rules guide visual mood selection; this is not deep semantic AI story understanding. Audio-reactive motion responds to the live frequency spectrum; it is not advertised as precise beat detection. No paid AI service or unlimited free generation is assumed.
-
-## Next architecture layer
-
-AI lyric transcription, mood/story planning and generated-scene providers can be connected as independent services without changing the local renderer. Provider integrations will be added only when credentials, terms and usable free quotas are available.
+## Deploy
+Enable GitHub Pages in repository Settings → Pages and verify the repository's Pages workflow publishes the root folder.
