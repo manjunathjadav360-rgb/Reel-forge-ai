@@ -28,4 +28,23 @@
 <section class="page" id="page-settings"><div class="heading"><div><small class="label">WORKSPACE CONFIGURATION</small><h1>Settings</h1><p>Configure your business profile.</p></div></div><article class="card narrow"><form id="businessForm"><label>Business name<input id="businessName" required></label><label>Industry<select id="industry"><option>Other</option><option>Hotel and hospitality</option><option>Education</option><option>Retail and ecommerce</option><option>Real estate</option><option>Healthcare administration</option></select></label><label>Website<input id="website" type="url" placeholder="https://example.com"></label><label>Default language<select id="language"><option>English</option><option>Hindi</option><option>Gujarati</option><option>Kannada</option></select></label><button class="primary">Save business profile</button></form></article></section>
 </div><footer>AIKIVO · Voice customer care platform <span>Prototype preview — not connected to live calls</span></footer></main></div>
 <div class="backdrop" id="onboardingModal"><div class="modal wide onboarding-modal"><button class="x" data-close>×</button><small class="label">AIKIVO QUICK START</small><div id="onboardingStepContent"></div></div></div><div class="backdrop" id="createModal"><div class="modal"><button class="x" data-close>×</button><small class="label">NEW ASSISTANT</small><h2>Create AI executive</h2><form id="agentForm"><label>Executive name<input id="agentName" required placeholder="e.g. Ava"></label><label>Role<select id="role"><option>Customer support</option><option>Hotel receptionist</option><option>Sales assistant</option><option>Appointment assistant</option><option>Admissions assistant</option></select></label><label>Greeting<textarea id="greeting" rows="3">Hello! Thank you for contacting us. How can I help you today?</textarea></label><label>Language<select id="agentLanguage"><option>English</option><option>Hindi</option><option>Gujarati</option><option>Kannada</option></select></label><button class="primary">Create executive</button></form></div></div>
-<div class="backdrop" id="testModal"><div class="modal wide"><button class="x" data-close>×</button><small class="label">AI ASSISTANT PLAYGROUND · TEST</small><h2 id="testTitle">Test your executive</h2><div id="chat" class="chat"></div><p id="voiceStatus" class="hint">Type a question or use the microphone.</p><form id="chatForm" class="chat-form"><input id="chatInput" placeholder="Type a customer question…" required><button class="primary">Send</button></form><div class="voice-buttons"><button type="button" class="secondary" id="listen">🎙 Speak</button><button type="button" class="secondary" id="stop">Stop voice</button></div></div></div><div id="toast"></div><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script><script src="supabase/config.js"></script><script src="supabase/client.js"></script><script src="app.js?v=20261113-4"></script><script src="auth.js?v=20261113-2"></script></body></html>
+<div class="backdrop" id="testModal"><div class="modal wide"><button class="x" data-close>×</button><small class="label">AI ASSISTANT PLAYGROUND · TEST</small><h2 id="testTitle">Test your executive</h2><div id="chat" class="chat"></div><p id="voiceStatus" class="hint">Type a question or use the microphone.</p><form id="chatForm" class="chat-form"><input id="chatInput" placeholder="Type a customer question…" required><button class="primary">Send</button></form><div class="voice-buttons"><button type="button" class="secondary" id="listen">🎙 Speak</button><button type="button" class="secondary" id="stop">Stop voice</button></div></div></div><div id="toast"></div><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0"></script><script src="supabase/config.js"></script><script src="supabase/client.js"></script><script src="app.js?v=20261113-4"></script><script>/* AIKIVO_NAV_FALLBACK */
+(function(){
+ document.addEventListener("click",function(event){
+  const nav=event.target.closest("[data-page]");
+  const go=event.target.closest("[data-goto]");
+  const target=nav||go;
+  if(target){
+   const name=nav?nav.dataset.page:go.dataset.goto;
+   document.querySelectorAll(".page").forEach(function(el){el.classList.toggle("show",el.id==="page-"+name)});
+   document.querySelectorAll(".nav").forEach(function(el){el.classList.toggle("active",el.dataset.page===name)});
+   const crumb=document.getElementById("crumb");
+   if(crumb)crumb.textContent=name.charAt(0).toUpperCase()+name.slice(1);
+   const sidebar=document.getElementById("sidebar");
+   if(sidebar)sidebar.classList.remove("open");
+  }
+  if(event.target.closest("#menu")){const sidebar=document.getElementById("sidebar");if(sidebar)sidebar.classList.toggle("open")}
+  if(event.target.closest("#dismiss")){const notice=document.getElementById("notice");if(notice)notice.remove()}
+ },true);
+})();
+</script><script src="auth.js?v=20261113-2"></script></body></html>
