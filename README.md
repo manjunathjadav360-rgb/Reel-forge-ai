@@ -32,3 +32,13 @@
 - The dashboard generates the selected assistant's embed snippet, copy action and live widget preview link.
 - Installation instructions explain the general HTML placement and note that site-builder menu names vary.
 - The widget remains hosted on GitHub Pages and uses the Supabase Edge Function. A production custom-domain allowlist, per-customer domain verification and a managed production hosting SLA are not included yet.
+
+
+## Verified website domains and widget origin security
+- Workspace owners/admins add exact public HTTPS hostnames for each AI executive.
+- Each hostname gets a unique DNS TXT verification token. Add the displayed TXT record at _aikivo-verification.<hostname>, then use Verify DNS in the launch center.
+- The public widget endpoint only serves assistants from hostnames with a successful DNS verification and a matching browser Origin.
+- The widget iframe relays API requests through the embedding page so the Edge Function sees the customer's website Origin rather than the AIKIVO iframe origin.
+- Removing a domain immediately blocks that hostname. Disabling the assistant also blocks widget requests.
+- DNS TXT verification proves control of the hostname at verification time. Origin/CORS restrictions are browser embedding controls, not cryptographic caller authentication; non-browser clients can forge an Origin header. Keep rate limits and server-side abuse controls enabled.
+- Existing published widgets need at least one DNS-verified hostname before they will respond. Add and verify the domain before testing.
