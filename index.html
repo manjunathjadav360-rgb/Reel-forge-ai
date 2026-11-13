@@ -61,7 +61,17 @@
   else if(/hello|hi|hey|good morning|good evening/.test(s))a="Hello! Thanks for contacting Sample Business. What can I help you with today?";
   else a="Thanks for your question. This sample assistant uses demonstration replies only. A live AI executive would answer using the business's approved information.";
   addBubble(a,"bot");el("voiceStatus").textContent="Sample simulation · not connected to a live AI model.";
-  if("speechSynthesis"in window){var u=new SpeechSynthesisUtterance(a);u.lang="en-IN";speechSynthesis.cancel();speechSynthesis.speak(u)}
+  if("speechSynthesis"in window){
+   var voices=speechSynthesis.getVoices(),u=new SpeechSynthesisUtterance(a);
+   var preferred=voices.filter(function(v){return /^en-IN/i.test(v.lang)});
+   var pool=preferred.length?preferred:voices.filter(function(v){return /^en-/i.test(v.lang)});
+   pool.sort(function(x,y){
+    function score(v){var n=(v.name+" "+v.voiceURI).toLowerCase();return (/(natural|neural|premium|enhanced)/.test(n)?10:0)+(/google/.test(n)?5:0)+(!v.localService?3:0)}
+    return score(y)-score(x);
+   });
+   if(pool.length)u.voice=pool[0];u.lang=u.voice?u.voice.lang:"en-IN";u.rate=0.94;u.pitch=1.02;
+   speechSynthesis.cancel();speechSynthesis.speak(u)
+  }
  }
  window.aikivoOpenDemo=function(){
   el("testTitle").textContent="Try AIKIVO · Sample Business";
