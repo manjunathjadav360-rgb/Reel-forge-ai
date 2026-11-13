@@ -32,6 +32,7 @@ create table if not exists public.knowledge_items (
   executive_id uuid references public.ai_executives(id) on delete cascade,
   question text not null,
   answer text not null,
+  embedding extensions.vector(1536),
   search_vector tsvector generated always as (
     setweight(to_tsvector('simple'::regconfig, coalesce(question, '')), 'A') ||
     setweight(to_tsvector('simple'::regconfig, coalesce(answer, '')), 'B')
@@ -92,6 +93,24 @@ $$;
 
 revoke all on function public.search_aikivo_knowledge(uuid, uuid, text, integer, text) from public, anon;
 grant execute on function public.search_aikivo_knowledge(uuid, uuid, text, integer, text) to authenticated, service_role;
+
+create or replace function public.search_aikivo_knowledge_semantic(
+  p_business_id uuid,p_executive_id uuid,p_query_embedding extensions.vector(1536),p_limit integer default 8
+)
+returns table(id uuid,question text,answer text,similarity real)
+language sql stable security invoker set search_path=''
+as $$
+ select k.id,k.question,k.answer,
+   (1 - (k.embedding OPERATOR(extensions.<=>) p_query_embedding))::real
+ from public.knowledge_items k
+ where k.business_id=p_business_id
+   and (k.executive_id is null or k.executive_id=p_executive_id)
+   and k.embedding is not null
+ order by k.embedding OPERATOR(extensions.<=>) p_query_embedding
+ limit greatest(1,least(coalesce(p_limit,8),12));
+$$;
+revoke all on function public.search_aikivo_knowledge_semantic(uuid,uuid,extensions.vector,integer) from public,anon;
+grant execute on function public.search_aikivo_knowledge_semantic(uuid,uuid,extensions.vector,integer) to authenticated,service_role;
 
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
