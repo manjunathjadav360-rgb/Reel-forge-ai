@@ -20,6 +20,8 @@ function page(p){document.querySelectorAll(".page").forEach(x=>x.classList.toggl
 function modal(id,on){document.getElementById(id).classList.toggle("open",on)}
 function requireWorkspace(){if(!currentUser||!businessId){toast("Please sign in to use your workspace.");return false}return true}
 function render(){
+ const quickTestButton=document.getElementById("quickTestButton");
+ if(quickTestButton){quickTestButton.disabled=!db.agents.length;quickTestButton.textContent=db.agents.length?"Test voice":"Create an executive first";}
  document.getElementById("sideBusiness").textContent=db.business.name;
  renderOnboardingPanel();
  document.getElementById("memberRoleLabel").textContent=memberRole.toUpperCase();
@@ -390,6 +392,7 @@ document.addEventListener("click",e=>{
  if(e.target.closest("[data-create]")){if(requireWorkspace())modal("createModal",true)}
  let closeButton=e.target.closest("[data-close]");if(closeButton)closeButton.closest(".backdrop")?.classList.remove("open");
  let sample=e.target.closest("[data-sample-question]");if(sample){const field=document.getElementById("chatInput");if(field)field.value=sample.dataset.sampleQuestion;const question=sample.dataset.sampleQuestion;if(field)field.value="";respond(question);return;}
+ let quickTest=e.target.closest("#quickTestButton");if(quickTest){const first=db.agents[0];if(first)openTest(first.id);else toast("Create an AI executive first, then test it.");return;}
  let t=e.target.closest("[data-test]");if(t)openTest(t.dataset.test);
  let widgetToggle=e.target.closest("[data-widget-toggle]");if(widgetToggle)toggleWebsiteWidget(widgetToggle.dataset.widgetToggle);
  let widgetCopy=e.target.closest("[data-copy-widget]");if(widgetCopy)copyWebsiteWidget(widgetCopy.dataset.copyWidget);
