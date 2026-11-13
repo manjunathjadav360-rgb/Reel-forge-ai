@@ -113,6 +113,24 @@ $$;
 revoke all on function public.search_aikivo_knowledge_semantic(uuid,uuid,extensions.vector,integer) from public,anon;
 grant execute on function public.search_aikivo_knowledge_semantic(uuid,uuid,extensions.vector,integer) to authenticated,service_role;
 
+create or replace function public.invalidate_knowledge_embedding()
+returns trigger
+language plpgsql
+set search_path=''
+as $$
+begin
+ if new.question is distinct from old.question or new.answer is distinct from old.answer then
+   new.embedding := null;
+ end if;
+ return new;
+end;
+$$;
+drop trigger if exists knowledge_items_invalidate_embedding on public.knowledge_items;
+create trigger knowledge_items_invalidate_embedding
+before update of question,answer on public.knowledge_items
+for each row execute function public.invalidate_knowledge_embedding();
+
+
 create table if not exists public.conversations (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references public.businesses(id) on delete cascade,
