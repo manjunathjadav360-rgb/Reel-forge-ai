@@ -10,6 +10,8 @@ let memberRole = "viewer";
 let workspaceLoadToken = 0;
 let ticketFilter = "all";
 let conversationFilter = "all";
+let onboardingStep=1;
+let onboardAgentId=null;
 
 function safe(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function toast(s){let t=document.getElementById("toast");t.textContent=s;t.style.cssText="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#172238;color:white;padding:10px 15px;border-radius:8px;font-size:11px;z-index:50";setTimeout(()=>t.style.cssText="",2600)}
@@ -18,6 +20,7 @@ function modal(id,on){document.getElementById(id).classList.toggle("open",on)}
 function requireWorkspace(){if(!currentUser||!businessId){toast("Please sign in to use your workspace.");return false}return true}
 function render(){
  document.getElementById("sideBusiness").textContent=db.business.name;
+ renderOnboardingPanel();
  document.getElementById("memberRoleLabel").textContent=memberRole.toUpperCase();
  document.querySelectorAll("[data-create]").forEach(b=>b.hidden=!["owner","admin"].includes(memberRole));
  document.getElementById("knowledgeForm").hidden=!["owner","admin"].includes(memberRole);
@@ -100,7 +103,7 @@ async function loadWorkspace(session){
  if(!session){currentUser=null;businessId=null;memberRole="viewer";db=emptyData();render();return}
  currentUser=session.user;
  try{
-  const {data:membership,error:memberError}=await supabase.from("business_members").select("business_id,member_role,businesses(id,name,industry,website,default_language)").eq("user_id",session.user.id).limit(1).maybeSingle();
+  const {data:membership,error:memberError}=await supabase.from("business_members").select("business_id,member_role,businesses(id,name,industry,website,default_language,onboarding_completed)").eq("user_id",session.user.id).limit(1).maybeSingle();
   if(memberError)throw memberError;
   if(!membership||!membership.business_id)throw new Error("Your account has no workspace membership. Please contact support.");
   const targetBusinessId=membership.business_id;
@@ -127,7 +130,7 @@ async function loadWorkspace(session){
   }
   if(token!==workspaceLoadToken)return;
   businessId=targetBusinessId;
-  db.business={name:business?.name||"My Business",industry:business?.industry||"Other",website:business?.website||"",language:business?.default_language||"English"};
+  db.business={name:business?.name||"My Business",industry:business?.industry||"Other",website:business?.website||"",language:business?.default_language||"English",onboarding_completed:!!business?.onboarding_completed};
   db.agents=(agentsRes.data||[]).map(a=>({id:a.id,name:a.name,role:a.role,greeting:a.greeting,language:a.language,widget_key:a.widget_key,widget_enabled:!!a.widget_enabled}));
   db.knowledge=(knowledgeRes.data||[]).map(k=>({id:k.id,q:k.question,a:k.answer}));
   db.tickets=ticketsRes.data||[];
@@ -147,6 +150,64 @@ async function loadWorkspace(session){
   console.error("AIKIVO workspace load:",error);
   toast("Workspace load failed: "+(error.message||"Please refresh."));
  }
+}
+
+
+function requireWorkspaceQuiet(){return !!(currentUser&&businessId)}
+function renderOnboardingPanel(){
+ const panel=document.getElementById("onboardingPanel");if(!panel)return;
+ const done=!!db.business.onboarding_completed,progress=done?4:Math.max(0,onboardingStep-1);
+ panel.hidden=done||!requireWorkspaceQuiet();
+ panel.innerHTML='<div class="onboard-card"><div><small class="label">GET YOUR FIRST AI LIVE</small><h2>Set up your AIKIVO workspace</h2><p>Configure your business, create an assistant, add one verified answer and publish your website chat.</p><div class="onboard-progress"><span style="width:'+(progress/4*100)+'%"></span></div><small class="onboard-count">'+progress+' of 4 setup steps completed</small></div><button class="primary" data-onboarding-start>Continue setup</button></div>';
+}
+function renderOnboardingStep(){
+ const host=document.getElementById("onboardingStepContent");if(!host)return;
+ const titles=["Business profile","Create your AI executive","Add your first answer","Preview and publish"];
+ let body="";
+ if(onboardingStep===1){
+  body='<label>Business name<input id="onboardBusinessName" maxlength="120" required value="'+safe(db.business.name)+'"></label><label>Industry<select id="onboardIndustry">'+["Other","Hotel and hospitality","Education","Retail and ecommerce","Real estate","Healthcare administration"].map(x=>'<option '+(db.business.industry===x?"selected":"")+'>'+x+'</option>').join("")+'</select></label><label>Website (optional)<input id="onboardWebsite" type="url" placeholder="https://example.com" value="'+safe(db.business.website)+'"></label><label>Default language<select id="onboardLanguage">'+["English","Hindi","Gujarati","Kannada"].map(x=>'<option '+(db.business.language===x?"selected":"")+'>'+x+'</option>').join("")+'</select></label><button class="primary" type="submit">Save and continue</button>';
+ }else if(onboardingStep===2){
+  body='<label>AI executive name<input id="onboardAgentName" required maxlength="60" placeholder="e.g. Aira"></label><label>Role<select id="onboardRole"><option>Customer support</option><option>Hotel receptionist</option><option>Sales assistant</option><option>Appointment assistant</option><option>Admissions assistant</option></select></label><label>Greeting<textarea id="onboardGreeting" rows="3" required>Hello! Thanks for contacting '+safe(db.business.name)+'. How can I help you today?</textarea></label><label>Reply language<select id="onboardAgentLanguage">'+["English","Hindi","Gujarati","Kannada"].map(x=>'<option '+(db.business.language===x?"selected":"")+'>'+x+'</option>').join("")+'</select></label><button class="primary" type="submit">Create AI executive</button>';
+ }else if(onboardingStep===3){
+  body='<label>Customer question<input id="onboardQuestion" required placeholder="What are your business hours?"></label><label>Verified business answer<textarea id="onboardAnswer" rows="4" required placeholder="Write the exact answer your business approves."></textarea></label><p class="hint">Your assistant should use approved answers and never invent business policies or prices.</p><button class="primary" type="submit">Save answer</button>';
+ }else{
+  const agent=db.agents.find(a=>a.id===onboardAgentId)||db.agents[0];
+  const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\\/script>':"Create an AI executive first.";
+  body='<p class="hint">Preview your assistant, then publish its website chat widget.</p><div class="onboard-preview"><b>'+safe(agent?.name||"No AI executive yet")+'</b><span>'+safe(agent?.role||"")+'</span><p>'+safe(agent?.greeting||"")+'</p></div><button class="secondary" type="button" data-onboard-preview '+(!agent?'disabled':'')+'>Preview assistant</button><label>Website embed code<textarea rows="2" readonly>'+safe(snippet)+'</textarea></label><button class="primary" type="submit" '+(!agent?'disabled':'')+'>Publish chat and finish setup</button>';
+ }
+ host.innerHTML='<div class="onboard-step-head"><small class="label">STEP '+onboardingStep+' OF 4</small><h2>'+titles[onboardingStep-1]+'</h2></div><form id="onboardingForm" class="onboarding-form">'+body+'</form>';
+}
+function startOnboarding(){
+ if(!requireWorkspace())return;
+ if(!["owner","admin"].includes(memberRole)){toast("Ask your workspace owner to complete setup.");return}
+ onboardingStep=1;onboardAgentId=db.agents[0]?.id||null;
+ if(db.agents.length)onboardingStep=3;
+ if(db.agents.length&&db.knowledge.length)onboardingStep=4;
+ renderOnboardingStep();modal("onboardingModal",true);
+}
+async function submitOnboardingStep(event){
+ event.preventDefault();const button=event.target.querySelector('button[type="submit"]');if(button)button.disabled=true;
+ try{
+  if(onboardingStep===1){
+   const v={name:document.getElementById("onboardBusinessName").value.trim(),industry:document.getElementById("onboardIndustry").value,website:document.getElementById("onboardWebsite").value.trim(),language:document.getElementById("onboardLanguage").value};
+   if(!v.name)throw new Error("Enter your business name.");
+   const {data,error}=await supabase.from("businesses").update({name:v.name,industry:v.industry,website:v.website||null,default_language:v.language}).eq("id",businessId).select().single();if(error)throw error;
+   db.business={...db.business,name:data.name,industry:data.industry||"Other",website:data.website||"",language:data.default_language||"English"};onboardingStep=2;
+  }else if(onboardingStep===2){
+   const ok=await saveAgent({name:document.getElementById("onboardAgentName").value.trim(),role:document.getElementById("onboardRole").value,greeting:document.getElementById("onboardGreeting").value.trim(),language:document.getElementById("onboardAgentLanguage").value});
+   if(!ok)throw new Error("Could not create your AI executive.");onboardAgentId=db.agents[db.agents.length-1]?.id;onboardingStep=3;
+  }else if(onboardingStep===3){
+   const ok=await saveKnowledge(document.getElementById("onboardQuestion").value.trim(),document.getElementById("onboardAnswer").value.trim());
+   if(!ok)throw new Error("Could not save the approved answer.");onboardingStep=4;
+  }else{
+   const agent=db.agents.find(a=>a.id===onboardAgentId)||db.agents[0];if(!agent)throw new Error("Create an AI executive before publishing.");
+   const {error:widgetError}=await supabase.from("ai_executives").update({widget_enabled:true}).eq("id",agent.id).eq("business_id",businessId);if(widgetError)throw widgetError;
+   const {error:doneError}=await supabase.from("businesses").update({onboarding_completed:true}).eq("id",businessId);if(doneError)throw doneError;
+   agent.widget_enabled=true;db.business.onboarding_completed=true;modal("onboardingModal",false);render();page("agents");toast("AIKIVO setup complete. Website chat is published.");return;
+  }
+  renderOnboardingStep();render();
+ }catch(error){toast(error.message||"Setup could not continue.");}
+ finally{if(button)button.disabled=false;}
 }
 
 async function toggleWebsiteWidget(id){
@@ -196,6 +257,8 @@ async function saveBusiness(values){
 }
 document.addEventListener("click",e=>{
  let n=e.target.closest("[data-page]");if(n)page(n.dataset.page);
+ if(e.target.closest("[data-onboarding-start]"))startOnboarding();
+ let preview=e.target.closest("[data-onboard-preview]");if(preview){const a=db.agents.find(x=>x.id===onboardAgentId)||db.agents[0];if(a)openTest(a.id);}
  let g=e.target.closest("[data-goto]");if(g)page(g.dataset.goto);
  if(e.target.closest("[data-create]")){if(requireWorkspace())modal("createModal",true)}
  if(e.target.closest("[data-close]"))document.querySelectorAll(".backdrop").forEach(x=>x.classList.remove("open"));
@@ -209,6 +272,7 @@ document.addEventListener("click",e=>{
 
 });
 document.querySelectorAll(".backdrop").forEach(x=>x.addEventListener("click",e=>{if(e.target===x)x.classList.remove("open")}));
+document.getElementById("onboardingStepContent").addEventListener("submit",submitOnboardingStep);
 document.getElementById("agentForm").addEventListener("submit",async e=>{
  e.preventDefault();if(!requireWorkspace())return;
  const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;
