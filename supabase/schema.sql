@@ -198,3 +198,54 @@ drop policy if exists "support staff update conversations" on public.conversatio
 create policy "support staff update conversations" on public.conversations for update to authenticated
 using (exists (select 1 from public.business_members bm where bm.business_id=conversations.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent')))
 with check (exists (select 1 from public.business_members bm where bm.business_id=conversations.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent')));
+
+
+-- Team directory and secure invitation support.
+alter table public.business_members add column if not exists email text;
+alter table public.business_members add column if not exists display_name text;
+update public.business_members bm
+set email=u.email, display_name=coalesce(nullif(u.raw_user_meta_data->>'full_name',''),split_part(coalesce(u.email,''),'@',1))
+from auth.users u where u.id=bm.user_id and (bm.email is null or bm.display_name is null);
+
+create table if not exists public.business_invitations (
+ id uuid primary key default gen_random_uuid(),
+ business_id uuid not null references public.businesses(id) on delete cascade,
+ email text not null,
+ member_role text not null check(member_role in ('admin','agent','viewer')),
+ invited_by uuid not null references auth.users(id) on delete cascade,
+ created_at timestamptz not null default now(),
+ expires_at timestamptz not null default (now()+interval '7 days'),
+ accepted_at timestamptz
+);
+create unique index if not exists business_invitations_pending_email_idx
+on public.business_invitations(business_id,lower(email)) where accepted_at is null;
+alter table public.business_invitations enable row level security;
+revoke all on public.business_invitations from anon,authenticated;
+grant select,insert,update,delete on public.business_invitations to service_role;
+
+create or replace function private.is_business_admin(target_business_id uuid)
+returns boolean language sql stable security definer set search_path=''
+as $$ select exists(select 1 from public.business_members bm where bm.business_id=target_business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin')); $$;
+create or replace function private.is_business_owner(target_business_id uuid)
+returns boolean language sql stable security definer set search_path=''
+as $$ select exists(select 1 from public.business_members bm where bm.business_id=target_business_id and bm.user_id=(select auth.uid()) and bm.member_role='owner'); $$;
+revoke all on function private.is_business_admin(uuid) from public,anon;
+revoke all on function private.is_business_owner(uuid) from public,anon;
+grant usage on schema private to authenticated;
+grant execute on function private.is_business_admin(uuid) to authenticated;
+grant execute on function private.is_business_owner(uuid) to authenticated;
+
+drop policy if exists "users read own memberships" on public.business_members;
+drop policy if exists "users read own or admins read team" on public.business_members;
+create policy "users read own or admins read team" on public.business_members for select to authenticated
+using(user_id=(select auth.uid()) or private.is_business_admin(business_id));
+drop policy if exists "admins update team roles" on public.business_members;
+create policy "admins update team roles" on public.business_members for update to authenticated
+using(private.is_business_admin(business_id) and user_id<>(select auth.uid()) and member_role<>'owner')
+with check(private.is_business_admin(business_id) and user_id<>(select auth.uid()) and member_role<>'owner' and (private.is_business_owner(business_id) or member_role<>'admin'));
+drop policy if exists "admins remove team members" on public.business_members;
+create policy "admins remove team members" on public.business_members for delete to authenticated
+using(private.is_business_admin(business_id) and user_id<>(select auth.uid()) and member_role<>'owner');
+grant select on public.business_members to authenticated;
+grant update(member_role) on public.business_members to authenticated;
+grant delete on public.business_members to authenticated;
