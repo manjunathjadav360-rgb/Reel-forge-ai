@@ -23,6 +23,7 @@ function render(){
  renderOnboardingPanel();
  document.getElementById("memberRoleLabel").textContent=memberRole.toUpperCase();
  document.getElementById("buildSemanticIndex").hidden=!["owner","admin"].includes(memberRole);
+ document.getElementById("aiEvaluationCard").hidden=!["owner","admin"].includes(memberRole);
  document.querySelectorAll("[data-create]").forEach(b=>b.hidden=!["owner","admin"].includes(memberRole));
  document.getElementById("knowledgeForm").hidden=!["owner","admin"].includes(memberRole);
  document.getElementById("websiteTrainForm").hidden=!["owner","admin"].includes(memberRole);
@@ -357,6 +358,30 @@ document.getElementById("knowledgeSearchForm").addEventListener("submit",async e
  if(!data?.length){status.textContent="No matching knowledge found. Try different wording or add an approved FAQ.";results.innerHTML='<p class="empty">No matching answers found.</p>';return}
  status.textContent="Found "+data.length+" relevant knowledge "+(data.length===1?"entry.":"entries.")+" This is a retrieval preview, not an AI-generated answer.";
  results.innerHTML=data.map((item,index)=>'<article class="knowledge-result"><div class="knowledge-result-head"><b>Match '+(index+1)+'</b><small>Relevance '+(Number(item.relevance||0).toFixed(3))+'</small></div><b class="knowledge-result-question">'+safe(item.question)+'</b><p>'+safe(item.answer)+'</p></article>').join("");
+});
+document.getElementById("aiEvaluationForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
+ const executiveId=document.getElementById("knowledgeSearchExecutive").value;
+ const questions=document.getElementById("aiEvaluationQuestions").value.split(/\\r?\\n/).map(q=>q.trim()).filter(Boolean);
+ const executive=db.agents.find(a=>a.id===executiveId);
+ if(!executive){toast("Choose an AI executive first.");return}
+ if(!questions.length){toast("Enter at least one test question.");return}
+ if(questions.length>10){toast("Run up to 10 questions at a time.");return}
+ const button=document.getElementById("runAiEvaluation"),status=document.getElementById("aiEvaluationStatus"),summary=document.getElementById("aiEvaluationSummary"),results=document.getElementById("aiEvaluationResults");
+ button.disabled=true;button.textContent="Testing…";summary.hidden=true;results.innerHTML="";
+ let supported=0,review=0,failed=0;
+ for(let i=0;i<questions.length;i++){
+  status.textContent="Testing question "+(i+1)+" of "+questions.length+"…";
+  const {data,error}=await supabase.functions.invoke("aikivo-evaluate",{body:{businessId,executiveId,question:questions[i]}});
+  if(error||!data){failed++;results.insertAdjacentHTML("beforeend",'<article class="evaluation-result failed"><div class="evaluation-result-head"><b>Test '+(i+1)+' · Error</b></div><p>'+safe(error?.message||"Evaluation failed.")+'</p></article>');continue}
+  const needsReview=data.status==="review_required";if(needsReview)review++;else supported++;
+  const matches=(data.matches||[]).slice(0,3).map(m=>'<div class="evaluation-match"><b>'+safe(m.question)+'</b><small>'+safe(m.method)+' · score '+Number(m.score||0).toFixed(3)+'</small></div>').join("");
+  results.insertAdjacentHTML("beforeend",'<article class="evaluation-result '+(needsReview?"review":"supported")+'"><div class="evaluation-result-head"><b>Test '+(i+1)+' · '+(needsReview?"Needs human review":"Knowledge found")+'</b><small>'+Number(data.matchCount||0)+' match(es)</small></div><p class="evaluation-question">'+safe(questions[i])+'</p><p>'+safe(data.answer||"No answer returned.")+'</p>'+(data.note?'<small class="hint">'+safe(data.note)+'</small>':"")+(matches?'<div class="evaluation-matches"><b>Retrieved evidence</b>'+matches+'</div>':'<small class="hint">No approved knowledge matched this question.</small>')+'</article>');
+ }
+ summary.hidden=false;summary.textContent=supported+" with evidence · "+review+" need human review · "+failed+" failed";
+ status.textContent="Evaluation complete. Review each answer and its retrieved evidence.";
+ button.disabled=false;button.textContent="Run tests";
 });
 document.getElementById("knowledgeForm").addEventListener("submit",async e=>{
  e.preventDefault();if(!requireWorkspace())return;
