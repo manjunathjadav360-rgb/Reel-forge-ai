@@ -77,8 +77,8 @@ New business owners can complete a guided setup in the dashboard: business profi
 
 
 ### Ranked AI knowledge retrieval
-- Knowledge questions and answers are indexed automatically with PostgreSQL full-text search.
-- Customer questions are searched with web-style query parsing and relevance ranking.
+- Knowledge questions and answers are indexed automatically with PostgreSQL full-text search (English stemming plus a simple tokenizer for other configured languages).
+- Customer questions are searched with OR-based web-style query parsing and relevance ranking to avoid requiring every word in a customer sentence to appear in an FAQ.
 - Dashboard test conversations and the public website widget retrieve up to 8 matching approved knowledge entries instead of loading up to 80 unrelated entries.
 - Search is scoped by business and AI executive; the SQL function runs as invoker and respects authenticated workspace RLS.
 - This is keyword-based retrieval, not embeddings or semantic vector search. Test with real FAQs in multiple languages before production.
