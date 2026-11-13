@@ -559,7 +559,22 @@ async function openTest(id){
  document.getElementById("voiceStatus").textContent="Conversation ready · this test keeps context across messages. No phone call is placed.";
 }
 function bubble(s,type){let d=document.createElement("div");d.className="bubble "+type;d.textContent=s;let c=document.getElementById("chat");c.appendChild(d);c.scrollTop=c.scrollHeight}
-function say(s,lang){if(!("speechSynthesis"in window))return;let u=new SpeechSynthesisUtterance(s);u.lang=({English:"en-IN",Hindi:"hi-IN",Gujarati:"gu-IN",Kannada:"kn-IN"})[lang]||"en-IN";speechSynthesis.cancel();speechSynthesis.speak(u)}
+function say(s,lang){
+ if(!("speechSynthesis"in window))return;
+ const locale=({English:"en-IN",Hindi:"hi-IN",Gujarati:"gu-IN",Kannada:"kn-IN"})[lang]||"en-IN";
+ const voices=speechSynthesis.getVoices();
+ const exact=voices.filter(v=>v.lang.toLowerCase()===locale.toLowerCase());
+ const pool=exact.length?exact:voices.filter(v=>v.lang.toLowerCase().startsWith(locale.split("-")[0].toLowerCase()));
+ pool.sort((a,b)=>{
+  const score=v=>{const n=(v.name+" "+v.voiceURI).toLowerCase();return (/natural|neural|premium|enhanced/.test(n)?10:0)+(/google/.test(n)?5:0)+(!v.localService?3:0)};
+  return score(b)-score(a);
+ });
+ const u=new SpeechSynthesisUtterance(s);
+ if(pool.length)u.voice=pool[0];
+ u.lang=u.voice?u.voice.lang:locale;
+ u.rate=0.94;u.pitch=1.02;
+ speechSynthesis.cancel();speechSynthesis.speak(u);
+}
 async function respond(q){
  if(demoMode){respondDemo(q);return;}
  if(!requireWorkspace())return;
