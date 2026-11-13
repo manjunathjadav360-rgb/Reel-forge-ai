@@ -141,18 +141,19 @@ function openTest(id){
  modal("testModal",true);
 }
 function bubble(s,type){let d=document.createElement("div");d.className="bubble "+type;d.textContent=s;let c=document.getElementById("chat");c.appendChild(d);c.scrollTop=c.scrollHeight}
-function answer(q){
- let ql=q.toLowerCase(),best=db.knowledge.map(k=>({k,score:k.q.toLowerCase().split(/\W+/).filter(w=>w.length>2&&ql.includes(w)).length})).sort((a,b)=>b.score-a.score)[0];
- if(best&&best.score)return best.k.a;
- if(/hello|hi|hey/.test(ql))return "Hello! Thank you for contacting "+db.business.name+". How can I help you?";
- if(/human|person|agent|complaint/.test(ql))return "I can note that you would like a human team member to follow up. Live call transfer is not enabled in this demo.";
- return "I don't have a verified answer for that yet. I don't want to guess. Please add the correct information to this business's knowledge base, or ask the team to follow up.";
-}
 function say(s,lang){if(!("speechSynthesis"in window))return;let u=new SpeechSynthesisUtterance(s);u.lang=({English:"en-IN",Hindi:"hi-IN",Gujarati:"gu-IN",Kannada:"kn-IN"})[lang]||"en-IN";speechSynthesis.cancel();speechSynthesis.speak(u)}
 async function respond(q){
  if(!requireWorkspace())return;
  let a=db.agents.find(x=>x.id===active);if(!a)return;
- bubble(q,"human");let ans=answer(q);bubble(ans,"bot");say(ans,a.language);
+ bubble(q,"human");
+ const status=document.getElementById("voiceStatus");
+ status.textContent="AIKIVO is preparing a reply…";
+ const {data:aiResult,error:aiError}=await supabase.functions.invoke("aikivo-ai",{body:{executiveId:a.id,message:q}});
+ if(aiError||!aiResult?.answer){status.textContent="AI reply failed. Please try again.";toast(aiResult?.error||aiError?.message||"AI engine unavailable.");return}
+ const ans=aiResult.answer;
+ if(!aiResult.providerConfigured){status.textContent="Knowledge-base backup mode · AI model provider is not configured yet."}
+ else{status.textContent="AI engine connected · "+a.name}
+ bubble(ans,"bot");say(ans,a.language);
  const {data:conversation,error:conversationError}=await supabase.from("conversations").insert({business_id:businessId,executive_id:a.id,channel:"test",status:"resolved"}).select().single();
  if(conversationError){toast("Reply shown, but conversation was not saved: "+conversationError.message);return}
  const {error:messageError}=await supabase.from("conversation_messages").insert([
