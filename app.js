@@ -1,5 +1,5 @@
 const supabase = window.aikivoSupabase;
-const emptyData = () => ({business:{name:"My Business",industry:"Other",website:"",language:"English"},agents:[],knowledge:[],chats:[]});
+const emptyData = () => ({business:{name:"My Business",industry:"Other",website:"",language:"English"},agents:[],knowledge:[],chats:[],tickets:[]});
 let db = emptyData();
 let active = null;
 let activeConversationId = null;
@@ -18,6 +18,7 @@ function render(){
  document.getElementById("agentCount").textContent=db.agents.length;
  document.getElementById("knowledgeCount").textContent=db.knowledge.length;
  document.getElementById("chatCount").textContent=db.chats.length;
+ document.getElementById("ticketCount").textContent=db.tickets.filter(t=>!["resolved","closed"].includes(t.status)).length;
  document.getElementById("businessName").value=db.business.name;
  document.getElementById("industry").value=db.business.industry;
  document.getElementById("website").value=db.business.website;
@@ -27,6 +28,7 @@ function render(){
  document.getElementById("overviewAgents").innerHTML=db.agents.length?db.agents.slice(0,3).map(a=>'<p>◉　<b>'+safe(a.name)+'</b> — '+safe(a.role)+' <button class="link" data-test="'+a.id+'">Test</button></p>').join(""):"No AI executives yet. Create your first assistant.";
  document.getElementById("knowledgeList").innerHTML=db.knowledge.map(k=>'<div class="knowledge-item"><b>'+safe(k.q)+'</b><p>'+safe(k.a)+'</p><button class="delete" data-kremove="'+k.id+'">Remove</button></div>').join("")||'<p class="empty">No knowledge items added.</p>';
  document.getElementById("conversationList").innerHTML=db.chats.slice().reverse().map(c=>'<div class="knowledge-item"><b>'+safe(c.agent)+'</b><p><b>Customer:</b> '+safe(c.q)+'</p><p><b>AI:</b> '+safe(c.a)+'</p><small>'+new Date(c.at).toLocaleString()+'</small></div>').join("")||"No conversations yet. Run a voice test to see it here.";
+ document.getElementById("ticketList").innerHTML=db.tickets.map(t=>'<div class="knowledge-item"><div class="ticket-top"><b>'+safe(t.subject)+'</b><select data-ticket-status="'+t.id+'"><option value="open" '+(t.status==="open"?"selected":"")+'>Open</option><option value="in_progress" '+(t.status==="in_progress"?"selected":"")+'>In progress</option><option value="waiting_customer" '+(t.status==="waiting_customer"?"selected":"")+'>Waiting</option><option value="resolved" '+(t.status==="resolved"?"selected":"")+'>Resolved</option><option value="closed" '+(t.status==="closed"?"selected":"")+'>Closed</option></select></div><p>'+safe(t.description||"")+'</p><small>'+new Date(t.created_at).toLocaleString()+'</small></div>').join("")||'<p class="empty">No handoff tickets yet.</p>';
 }
 async function loadWorkspace(session){
  const token=++workspaceLoadToken;
@@ -38,14 +40,16 @@ async function loadWorkspace(session){
   if(!membership||!membership.business_id)throw new Error("Your account has no workspace membership. Please contact support.");
   const targetBusinessId=membership.business_id;
   const business=Array.isArray(membership.businesses)?membership.businesses[0]:membership.businesses;
-  const [agentsRes,knowledgeRes,conversationsRes]=await Promise.all([
+  const [agentsRes,knowledgeRes,conversationsRes,ticketsRes]=await Promise.all([
    supabase.from("ai_executives").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
    supabase.from("knowledge_items").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
-   supabase.from("conversations").select("*").eq("business_id",targetBusinessId).order("started_at",{ascending:false})
+   supabase.from("conversations").select("*").eq("business_id",targetBusinessId).order("started_at",{ascending:false}),
+   supabase.from("support_tickets").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:false})
   ]);
   if(agentsRes.error)throw agentsRes.error;
   if(knowledgeRes.error)throw knowledgeRes.error;
   if(conversationsRes.error)throw conversationsRes.error;
+  if(ticketsRes.error)throw ticketsRes.error;
   const conversations=conversationsRes.data||[];
   let messages=[];
   if(conversations.length){
@@ -58,6 +62,7 @@ async function loadWorkspace(session){
   db.business={name:business?.name||"My Business",industry:business?.industry||"Other",website:business?.website||"",language:business?.default_language||"English"};
   db.agents=(agentsRes.data||[]).map(a=>({id:a.id,name:a.name,role:a.role,greeting:a.greeting,language:a.language}));
   db.knowledge=(knowledgeRes.data||[]).map(k=>({id:k.id,q:k.question,a:k.answer}));
+  db.tickets=ticketsRes.data||[];
   const agentNames=new Map(db.agents.map(a=>[a.id,a.name]));
   db.chats=conversations.map(c=>{
    const rows=messages.filter(m=>m.conversation_id===c.id);
@@ -166,9 +171,11 @@ async function respond(q){
   {conversation_id:activeConversationId,speaker:"assistant",body:ans}
  ]);
  if(messageError){toast("Reply shown, but messages failed to save: "+messageError.message);return}
+if(aiResult.handoffRecommended||aiResult.mode==="handoff"){const {data:ticket,error:ticketError}=await supabase.from("support_tickets").insert({business_id:businessId,conversation_id:activeConversationId,subject:"Customer needs human follow-up",description:"Customer question: "+q+" | AI response: "+ans,priority:"normal",status:"open"}).select().single();if(ticketError){toast("Ticket creation failed: "+ticketError.message)}else{db.tickets.unshift(ticket);await supabase.from("conversations").update({status:"escalated"}).eq("id",activeConversationId);toast("Human handoff ticket created. Check Support inbox.")}}
  const saved=db.chats.find(c=>c.id===activeConversationId);
  if(saved){saved.q+=(saved.q?"\n":"")+q;saved.a+=(saved.a?"\n":"")+ans;render()}
 }
+document.addEventListener("change",async e=>{const s=e.target.closest("[data-ticket-status]");if(!s)return;const {error}=await supabase.from("support_tickets").update({status:s.value,updated_at:new Date().toISOString()}).eq("id",s.dataset.ticketStatus);if(error){toast("Ticket update failed: "+error.message);return}const t=db.tickets.find(x=>x.id===s.dataset.ticketStatus);if(t)t.status=s.value;render();toast("Ticket updated.")});
 document.getElementById("chatForm").addEventListener("submit",e=>{e.preventDefault();let i=document.getElementById("chatInput"),q=i.value.trim();if(q){i.value="";respond(q)}});
 document.getElementById("listen").onclick=()=>{
  let SR=window.SpeechRecognition||window.webkitSpeechRecognition;
