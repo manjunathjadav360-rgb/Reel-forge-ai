@@ -153,3 +153,48 @@ create policy "members update conversations" on public.conversations for update 
 using (exists (select 1 from public.business_members bm where bm.business_id=conversations.business_id and bm.user_id=(select auth.uid())))
 with check (exists (select 1 from public.business_members bm where bm.business_id=conversations.business_id and bm.user_id=(select auth.uid())));
 grant update on table public.conversations to authenticated;
+
+
+-- Workspace role-based permissions.
+drop policy if exists "members manage executives" on public.ai_executives;
+drop policy if exists "members read executives" on public.ai_executives;
+drop policy if exists "admins manage executives" on public.ai_executives;
+create policy "members read executives" on public.ai_executives for select to authenticated
+using (exists (select 1 from public.business_members bm where bm.business_id=ai_executives.business_id and bm.user_id=(select auth.uid())));
+create policy "admins manage executives" on public.ai_executives for all to authenticated
+using (exists (select 1 from public.business_members bm where bm.business_id=ai_executives.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin')))
+with check (exists (select 1 from public.business_members bm where bm.business_id=ai_executives.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin')));
+
+drop policy if exists "members manage knowledge" on public.knowledge_items;
+drop policy if exists "members read knowledge" on public.knowledge_items;
+drop policy if exists "admins manage knowledge" on public.knowledge_items;
+create policy "members read knowledge" on public.knowledge_items for select to authenticated
+using (exists (select 1 from public.business_members bm where bm.business_id=knowledge_items.business_id and bm.user_id=(select auth.uid())));
+create policy "admins manage knowledge" on public.knowledge_items for all to authenticated
+using (exists (select 1 from public.business_members bm where bm.business_id=knowledge_items.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin')))
+with check (exists (select 1 from public.business_members bm where bm.business_id=knowledge_items.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin')));
+
+drop policy if exists "members manage tickets" on public.support_tickets;
+drop policy if exists "members read tickets" on public.support_tickets;
+drop policy if exists "support staff create tickets" on public.support_tickets;
+drop policy if exists "support staff update tickets" on public.support_tickets;
+drop policy if exists "admins delete tickets" on public.support_tickets;
+create policy "members read tickets" on public.support_tickets for select to authenticated
+using (exists (select 1 from public.business_members bm where bm.business_id=support_tickets.business_id and bm.user_id=(select auth.uid())));
+create policy "support staff create tickets" on public.support_tickets for insert to authenticated
+with check (exists (select 1 from public.business_members bm where bm.business_id=support_tickets.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent')));
+create policy "support staff update tickets" on public.support_tickets for update to authenticated
+using (exists (select 1 from public.business_members bm where bm.business_id=support_tickets.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent')))
+with check (exists (select 1 from public.business_members bm where bm.business_id=support_tickets.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent')));
+create policy "admins delete tickets" on public.support_tickets for delete to authenticated
+using (exists (select 1 from public.business_members bm where bm.business_id=support_tickets.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin')));
+
+drop policy if exists "members create conversations" on public.conversations;
+drop policy if exists "support staff create conversations" on public.conversations;
+create policy "support staff create conversations" on public.conversations for insert to authenticated
+with check (exists (select 1 from public.business_members bm where bm.business_id=conversations.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent')));
+drop policy if exists "members update conversations" on public.conversations;
+drop policy if exists "support staff update conversations" on public.conversations;
+create policy "support staff update conversations" on public.conversations for update to authenticated
+using (exists (select 1 from public.business_members bm where bm.business_id=conversations.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent')))
+with check (exists (select 1 from public.business_members bm where bm.business_id=conversations.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin','agent')));
