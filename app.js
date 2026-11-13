@@ -1,5 +1,5 @@
 const supabase = window.aikivoSupabase;
-const emptyData = () => ({business:{name:"My Business",industry:"Other",website:"",language:"English"},agents:[],knowledge:[],knowledgeSources:[],chats:[],tickets:[],members:[]});
+const emptyData = () => ({business:{name:"My Business",industry:"Other",website:"",language:"English"},agents:[],knowledge:[],knowledgeSources:[],widgetDomains:[],chats:[],tickets:[],members:[]});
 let db = emptyData();
 let active = null;
 let activeConversationId = null;
@@ -131,7 +131,8 @@ async function loadWorkspace(session){
    supabase.from("knowledge_sources").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:false}),
    supabase.from("conversations").select("*").eq("business_id",targetBusinessId).order("started_at",{ascending:false}),
    supabase.from("support_tickets").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:false}),
-   supabase.from("business_members").select("user_id,email,display_name,member_role,created_at").eq("business_id",targetBusinessId).order("created_at",{ascending:true})
+   supabase.from("business_members").select("user_id,email,display_name,member_role,created_at").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
+   ["owner","admin"].includes(memberRole)?supabase.from("widget_domains").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}):Promise.resolve({data:[],error:null})
   ]);
   if(agentsRes.error)throw agentsRes.error;
   if(knowledgeRes.error)throw knowledgeRes.error;
@@ -139,6 +140,7 @@ async function loadWorkspace(session){
   if(conversationsRes.error)throw conversationsRes.error;
   if(ticketsRes.error)throw ticketsRes.error;
   if(membersRes.error)throw membersRes.error;
+  if(domainsRes.error)throw domainsRes.error;
   const conversations=conversationsRes.data||[];
   let messages=[];
   if(conversations.length){
@@ -152,6 +154,7 @@ async function loadWorkspace(session){
   db.agents=(agentsRes.data||[]).map(a=>({id:a.id,name:a.name,role:a.role,greeting:a.greeting,language:a.language,widget_key:a.widget_key,widget_enabled:!!a.widget_enabled}));
   db.knowledge=(knowledgeRes.data||[]).map(k=>({id:k.id,q:k.question,a:k.answer,source_id:k.source_id}));
   db.knowledgeSources=sourcesRes.data||[];
+  db.widgetDomains=domainsRes.data||[];
   db.tickets=ticketsRes.data||[];
   db.members=membersRes.data||[];
   const agentNames=new Map(db.agents.map(a=>[a.id,a.name]));
@@ -235,13 +238,14 @@ function renderLaunchCenter(){
  select.innerHTML=db.agents.map(a=>'<option value="'+safe(a.id)+'" '+(a.id===launchAgentId?'selected':'')+'>'+safe(a.name)+'</option>').join("")||'<option value="">Create an AI executive first</option>';
  select.disabled=!db.agents.length;
  const agent=db.agents.find(a=>a.id===launchAgentId),isAdmin=["owner","admin"].includes(memberRole),hasKnowledge=db.knowledge.length>0;
- const ready=!!agent&&hasKnowledge,enabled=!!agent?.widget_enabled;
- const website=db.business.website;
+ const domains=db.widgetDomains.filter(d=>d.executive_id===launchAgentId),enabled=!!agent?.widget_enabled;
+ const ready=!!agent&&hasKnowledge&&domains.length>0,website=db.business.website;
  const steps=[
-  {ok:!!db.business.name&&db.business.name!=="My Business",title:"Business profile",detail:website?"Business name and website are saved.":"Business name saved. Add your website URL in Settings when ready."},
+  {ok:!!db.business.name&&db.business.name!=="My Business",title:"Business profile",detail:website?"Business name and website are saved.":"Business name saved. Add your website URL in Settings."},
   {ok:!!agent,title:"AI executive",detail:agent?agent.name+" is configured.":"Create an AI executive first."},
   {ok:hasKnowledge,title:"Approved knowledge",detail:hasKnowledge?db.knowledge.length+" approved knowledge item(s) available.":"Add at least one verified FAQ or import business information."},
-  {ok:enabled,title:"Website chat published",detail:enabled?"Widget is enabled and ready to install.":"Publish the widget after completing the required setup."}
+  {ok:domains.length>0,title:"Approved website domain",detail:domains.length?domains.map(d=>d.domain).join(", "):"Add the exact hostname where this assistant will appear."},
+  {ok:enabled,title:"Website chat published",detail:enabled?"Widget is enabled and domain-restricted.":"Publish the widget after completing the required setup."}
  ];
  document.getElementById("launchChecklist").innerHTML=steps.map((s,i)=>'<div class="launch-step"><span class="launch-step-icon '+(s.ok?'done':'pending')+'">'+(s.ok?'✓':(i+1))+'</span><div><b>'+safe(s.title)+'</b><small>'+safe(s.detail)+'</small></div></div>').join("");
  const badge=document.getElementById("launchStatusBadge");
@@ -249,14 +253,36 @@ function renderLaunchCenter(){
  const button=document.getElementById("launchPublishButton");
  button.textContent=enabled?"Disable website chat":"Publish website chat";
  button.disabled=!isAdmin||(!ready&&!enabled);
- button.title=!isAdmin?"Only workspace owners and admins can publish.":(!ready&&!enabled?"Add an AI executive and at least one approved knowledge item first.":"");
+ button.title=!isAdmin?"Only workspace owners and admins can publish.":(!ready&&!enabled?"Add an AI executive, approved knowledge and website domain first.":"");
+ const domainList=document.getElementById("launchDomainList");
+ if(domainList)domainList.innerHTML=domains.map(d=>'<div class="launch-domain-row"><span><b>'+safe(d.domain)+'</b><small>Exact hostname · HTTPS</small></span><button type="button" class="secondary" data-domain-remove="'+safe(d.id)+'">Remove</button></div>').join("")||'<p class="hint">No approved domains yet. Add the hostname used by your website.</p>';
  const code=document.getElementById("launchEmbedCode");
  const snippet=agent?'<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+agent.widget_key+'"><\\/script>':"Create an AI executive to generate installation code.";
  code.value=snippet;
  document.getElementById("launchCopyButton").disabled=!enabled||!isAdmin;
  const preview=document.getElementById("launchPreviewLink");
- if(enabled&&agent){preview.href="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.html?key="+encodeURIComponent(agent.widget_key);preview.hidden=false;}else{preview.href="#";preview.hidden=true;}
+ let websiteHost="";try{websiteHost=new URL(website).hostname.toLowerCase();}catch{}
+ const websiteApproved=domains.some(d=>d.domain===websiteHost);
+ if(enabled&&website&&websiteApproved){preview.href=website;preview.textContent="Open your website to test ↗";preview.hidden=false;}else{preview.href="#";preview.textContent="Open your website to test ↗";preview.hidden=true;}
  document.getElementById("launchCenter").hidden=!isAdmin;
+}
+async function addWidgetDomain(){
+ if(!requireWorkspace()||!["owner","admin"].includes(memberRole)||!launchAgentId)return;
+ const input=document.getElementById("launchDomainInput"),raw=input.value.trim();
+ let parsed;try{parsed=new URL(raw);}catch{toast("Enter a complete website URL, such as https://example.com");return;}
+ const domain=parsed.hostname.toLowerCase().replace(/\\.$/,"");
+ if(parsed.protocol!=="https:"||parsed.username||parsed.password||!domain.includes(".")||domain==="localhost"||domain.endsWith(".local")||/^[0-9.]+$/.test(domain)||domain.includes("*")){
+  toast("Use a public HTTPS website URL. Add exact hostnames only; no IPs or wildcards.");return;
+ }
+ const {data,error}=await supabase.from("widget_domains").insert({business_id:businessId,executive_id:launchAgentId,domain,created_by:currentUser.id}).select().single();
+ if(error){toast(error.code==="23505"?"This hostname is already approved for this assistant.":"Could not add website domain: "+error.message);return;}
+ db.widgetDomains.push(data);input.value="";renderLaunchCenter();toast("Website domain approved: "+domain);
+}
+async function removeWidgetDomain(id){
+ if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
+ const {error}=await supabase.from("widget_domains").delete().eq("id",id).eq("business_id",businessId);
+ if(error){toast("Could not remove domain: "+error.message);return;}
+ db.widgetDomains=db.widgetDomains.filter(d=>d.id!==id);renderLaunchCenter();toast("Approved domain removed.");
 }
 
 async function toggleWebsiteWidget(id){
@@ -264,6 +290,7 @@ async function toggleWebsiteWidget(id){
  const agent=db.agents.find(a=>a.id===id);if(!agent)return;
  const enabled=!agent.widget_enabled;
  if(enabled&&db.knowledge.length===0){toast('Add at least one approved FAQ before publishing.');page('knowledge');return;}
+ if(enabled&&!db.widgetDomains.some(d=>d.executive_id===id)){toast("Add an approved website domain in the launch center before publishing.");page("agents");return;}
  const {data,error}=await supabase.from("ai_executives").update({widget_enabled:enabled}).eq("id",id).eq("business_id",businessId).select("id,widget_enabled").single();
  if(error){toast("Could not update website widget: "+error.message);return}
  agent.widget_enabled=data.widget_enabled;render();toast(enabled?"Website chat enabled. Copy the embed code.":"Website chat disabled.");
@@ -336,6 +363,8 @@ async function saveBusiness(values){
 document.addEventListener("click",e=>{
  if(e.target.closest("#launchPublishButton")){if(launchAgentId)toggleWebsiteWidget(launchAgentId);return;}
  if(e.target.closest("#launchCopyButton")){if(launchAgentId)copyWebsiteWidget(launchAgentId);return;}
+ if(e.target.closest("#launchAddDomainButton")){addWidgetDomain();return;}
+ const removeDomain=e.target.closest("[data-domain-remove]");if(removeDomain){removeWidgetDomain(removeDomain.dataset.domainRemove);return;}
  let n=e.target.closest("[data-page]");if(n)page(n.dataset.page);
  if(e.target.closest("[data-onboarding-start]"))startOnboarding();
  let preview=e.target.closest("[data-onboard-preview]");if(preview){const a=db.agents.find(x=>x.id===onboardAgentId)||db.agents[0];if(a)openTest(a.id);}
