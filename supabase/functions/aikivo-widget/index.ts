@@ -128,13 +128,19 @@ Deno.serve(async (req: Request) => {
       content: String(item.body).slice(0, 3000),
     }));
 
-    const [{ data: business }, { data: knowledge }] = await Promise.all([
+    const [{ data: business }, { data: knowledge, error: knowledgeError }] = await Promise.all([
       admin.from("businesses").select("name,industry,default_language").eq("id", executive.business_id).single(),
-      admin.from("knowledge_items").select("question,answer")
-        .eq("business_id", executive.business_id)
-        .or(`executive_id.is.null,executive_id.eq.${executive.id}`)
-        .limit(80),
+      admin.rpc("search_aikivo_knowledge", {
+        p_business_id: executive.business_id,
+        p_executive_id: executive.id,
+        p_query: message,
+        p_limit: 8,
+      }),
     ]);
+    if (knowledgeError) {
+      console.error("Widget knowledge search error", knowledgeError);
+      return json({ error: "The business knowledge base could not be searched." }, 500);
+    }
 
     let answer = "";
     let mode = "knowledge_match";
