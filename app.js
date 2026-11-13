@@ -7,6 +7,8 @@ let rec = null;
 let currentUser = null;
 let businessId = null;
 let memberRole = "viewer";
+let previewRole = "actual";
+function uiRole(){return previewRole==="actual"?memberRole:previewRole;}
 let workspaceLoadToken = 0;
 let ticketFilter = "all";
 let conversationFilter = "all";
@@ -24,19 +26,21 @@ function render(){
  if(quickTestButton){quickTestButton.disabled=!db.agents.length;quickTestButton.textContent=db.agents.length?"Test voice":"Create an executive first";}
  document.getElementById("sideBusiness").textContent=db.business.name;
  renderOnboardingPanel();
- document.getElementById("memberRoleLabel").textContent=memberRole.toUpperCase();
- document.getElementById("buildSemanticIndex").hidden=!["owner","admin"].includes(memberRole);
- document.getElementById("aiEvaluationCard").hidden=!["owner","admin"].includes(memberRole);
- document.querySelectorAll("[data-create]").forEach(b=>b.hidden=!["owner","admin"].includes(memberRole));
- document.getElementById("knowledgeForm").hidden=!["owner","admin"].includes(memberRole);
- document.getElementById("websiteTrainForm").hidden=!["owner","admin"].includes(memberRole);
- document.getElementById("textTrainForm").hidden=!["owner","admin"].includes(memberRole);
- document.getElementById("businessForm").querySelectorAll("input,select,button").forEach(el=>el.disabled=!["owner","admin"].includes(memberRole));
- document.getElementById("teamRole").textContent=memberRole.charAt(0).toUpperCase()+memberRole.slice(1);
- document.getElementById("teamPermissionSummary").textContent=memberRole==="owner"?"Full workspace control, including business settings, AI executives, knowledge and team management.":memberRole==="admin"?"Manage business settings, AI executives, knowledge and support. Invite agents and viewers.":"Handle conversations and support tickets. Workspace configuration is read-only.";
- document.getElementById("invitePanel").hidden=!(memberRole==="owner"||memberRole==="admin");
- document.getElementById("inviteRoleAdmin").hidden=memberRole!=="owner";
- document.getElementById("teamList").innerHTML=db.members.map(m=>{const editable=["owner","admin"].includes(memberRole)&&m.member_role!=="owner"&&m.user_id!==currentUser?.id;const opts=(memberRole==="owner"?["admin","agent","viewer"]:["agent","viewer"]).map(r=>`<option value="${r}" ${m.member_role===r?"selected":""}>${r}</option>`).join("");return `<div class="team-row"><div class="team-person"><b>${safe(m.display_name||m.email||"Team member")}</b><small>${safe(m.email||"Email unavailable")}</small></div><span class="team-role">${safe(m.member_role)}</span>${editable?`<select data-member-role="${m.user_id}">${opts}</select><button class="secondary" data-member-remove="${m.user_id}">Remove</button>`:""}</div>`}).join("")||`<p class="empty">No team members found.</p>`;
+ const shownRole=uiRole();
+ document.getElementById("memberRoleLabel").textContent=shownRole.toUpperCase()+(previewRole==="actual"?"":" · PREVIEW");
+ const rolePreviewSelect=document.getElementById("rolePreviewSelect");if(rolePreviewSelect)rolePreviewSelect.value=previewRole;
+ document.getElementById("buildSemanticIndex").hidden=!["owner","admin"].includes(shownRole);
+ document.getElementById("aiEvaluationCard").hidden=!["owner","admin"].includes(shownRole);
+ document.querySelectorAll("[data-create]").forEach(b=>b.hidden=!["owner","admin"].includes(shownRole));
+ document.getElementById("knowledgeForm").hidden=!["owner","admin"].includes(shownRole);
+ document.getElementById("websiteTrainForm").hidden=!["owner","admin"].includes(shownRole);
+ document.getElementById("textTrainForm").hidden=!["owner","admin"].includes(shownRole);
+ document.getElementById("businessForm").querySelectorAll("input,select,button").forEach(el=>el.disabled=!["owner","admin"].includes(shownRole));
+ document.getElementById("teamRole").textContent=shownRole.charAt(0).toUpperCase()+shownRole.slice(1);
+ document.getElementById("teamPermissionSummary").textContent=shownRole==="owner"?"Full workspace control, including business settings, AI executives, knowledge and team management.":shownRole==="admin"?"Manage business settings, AI executives, knowledge and support. Invite agents and viewers.":"Handle conversations and support tickets. Workspace configuration is read-only.";
+ document.getElementById("invitePanel").hidden=!(shownRole==="owner"||shownRole==="admin");
+ document.getElementById("inviteRoleAdmin").hidden=shownRole!=="owner";
+ document.getElementById("teamList").innerHTML=db.members.map(m=>{const editable=["owner","admin"].includes(shownRole)&&m.member_role!=="owner"&&m.user_id!==currentUser?.id;const opts=(shownRole==="owner"?["admin","agent","viewer"]:["agent","viewer"]).map(r=>`<option value="${r}" ${m.member_role===r?"selected":""}>${r}</option>`).join("");return `<div class="team-row"><div class="team-person"><b>${safe(m.display_name||m.email||"Team member")}</b><small>${safe(m.email||"Email unavailable")}</small></div><span class="team-role">${safe(m.member_role)}</span>${editable?`<select data-member-role="${m.user_id}">${opts}</select><button class="secondary" data-member-remove="${m.user_id}">Remove</button>`:""}</div>`}).join("")||`<p class="empty">No team members found.</p>`;
  document.getElementById("agentCount").textContent=db.agents.length;
  document.getElementById("knowledgeCount").textContent=db.knowledge.length;
  document.getElementById("chatCount").textContent=db.chats.length;
@@ -47,7 +51,7 @@ function render(){
  document.getElementById("language").value=db.business.language;
  const cards=db.agents.map(a=>{
  const snippet='<script src="https://manjunathjadav360-rgb.github.io/Reel-forge-ai/widget.js" data-aikivo-key="'+a.widget_key+'"><\/script>';const verified=db.widgetDomains.some(d=>d.executive_id===a.id&&d.verified_at);
- return '<article class="agent-card"><h3>◉　'+safe(a.name)+'</h3><p>'+safe(a.role)+' · '+safe(a.language)+'</p><p>'+safe(a.greeting)+'</p><div class="agent-actions"><button class="secondary" data-test="'+a.id+'">Test voice</button><button class="secondary" data-widget-toggle="'+a.id+'" '+(!["owner","admin"].includes(memberRole)?'disabled':'')+'>'+(a.widget_enabled?'Disable website chat':'Enable website chat')+'</button><button class="secondary" data-remove="'+a.id+'">Delete</button></div><div class="widget-embed"><small class="label">WEBSITE CHAT WIDGET</small><p class="widget-state">'+(a.widget_enabled?(verified?'Enabled · verified domain':'Enabled · domain verification required'):'Disabled · enable to receive website chats')+'</p><textarea readonly rows="2">'+safe(snippet)+'</textarea><button class="link" data-copy-widget="'+a.id+'" '+(!a.widget_enabled?'disabled':'')+'>Copy embed code</button></div></article>';
+ return '<article class="agent-card"><h3>◉　'+safe(a.name)+'</h3><p>'+safe(a.role)+' · '+safe(a.language)+'</p><p>'+safe(a.greeting)+'</p><div class="agent-actions"><button class="secondary" data-test="'+a.id+'">Test voice</button><button class="secondary" data-widget-toggle="'+a.id+'" '+(!["owner","admin"].includes(shownRole)?'disabled':'')+'>'+(a.widget_enabled?'Disable website chat':'Enable website chat')+'</button><button class="secondary" data-remove="'+a.id+'">Delete</button></div><div class="widget-embed"><small class="label">WEBSITE CHAT WIDGET</small><p class="widget-state">'+(a.widget_enabled?(verified?'Enabled · verified domain':'Enabled · domain verification required'):'Disabled · enable to receive website chats')+'</p><textarea readonly rows="2">'+safe(snippet)+'</textarea><button class="link" data-copy-widget="'+a.id+'" '+(!a.widget_enabled?'disabled':'')+'>Copy embed code</button></div></article>';
 }).join("");
  document.getElementById("agentList").innerHTML=cards||'<article class="card empty">No AI executives yet. Use Create executive to add one.</article>';
  renderLaunchCenter();
@@ -75,12 +79,12 @@ function renderConversations(){
  if(!list)return;
  list.innerHTML=visible.slice().reverse().map(c=>{
   const assignee=db.members.find(m=>m.user_id===c.assigned_to);
-  const canAssign=memberRole==="owner"||memberRole==="admin"||memberRole==="agent";
-  const choices=memberRole==="owner"||memberRole==="admin"?roster:(memberRole==="agent"?roster.filter(m=>m.user_id===currentUser?.id):[]);
+  const canAssign=uiRole()==="owner"||uiRole()==="admin"||uiRole()==="agent";
+  const choices=uiRole()==="owner"||uiRole()==="admin"?roster:(uiRole()==="agent"?roster.filter(m=>m.user_id===currentUser?.id):[]);
   let options='<option value="">Unassigned</option>'+choices.map(m=>'<option value="'+m.user_id+'" '+(c.assigned_to===m.user_id?"selected":"")+'>'+safe(m.display_name||m.email||"Team member")+' · '+safe(m.member_role)+'</option>').join("");
   if(c.assigned_to&&!choices.some(m=>m.user_id===c.assigned_to))options+='<option value="'+c.assigned_to+'" selected>Current assignee</option>';
   const messages=(c.messages||[]).map(m=>'<div class="thread-message"><b>'+safe(({customer:"Customer",assistant:"AI executive",agent:"Agent",admin:"Admin",owner:"Owner"})[m.speaker]||m.speaker)+'</b><p>'+safe(m.body)+'</p><small>'+new Date(m.created_at).toLocaleString()+'</small></div>').join("")||'<p class="empty">No messages yet.</p>';
-  const replyAllowed=["owner","admin","agent"].includes(memberRole)&&c.status!=="resolved";
+  const replyAllowed=["owner","admin","agent"].includes(uiRole())&&c.status!=="resolved";
   return '<article class="conversation-card"><div class="conversation-head"><div><b>'+safe(c.agent)+'</b><small>'+new Date(c.at).toLocaleString()+'</small></div><span class="conversation-status">'+safe(c.status||"open")+'</span></div><div class="conversation-assignment"><span>Assigned to: <b>'+safe(assignee?.display_name||assignee?.email||(c.assigned_to?"Team member":"Unassigned"))+'</b></span><select data-conversation-assignee="'+c.id+'" '+(!canAssign?'disabled':'')+'>'+options+'</select></div><div class="conversation-thread">'+messages+'</div>'+(replyAllowed?'<form class="team-reply-form" data-team-reply="'+c.id+'"><textarea id="reply-'+c.id+'" rows="2" placeholder="Write a reply as your support team…" required></textarea><button class="primary" type="submit">Send reply</button></form>':'<p class="hint">This conversation is resolved or your role is read-only.</p>')+'</article>';
  }).join("")||'<p class="empty">'+(db.chats.length?"No conversations match this filter.":"No conversations yet. Start a test conversation to see it here.")+'</p>';
 }
@@ -105,11 +109,11 @@ function renderTickets(){
  const mine=db.tickets.filter(t=>t.assigned_to===currentUser?.id&&!["resolved","closed"].includes(t.status)).length;
  const summary=document.getElementById("ticketSummary");
  if(summary)summary.textContent=db.tickets.length+" total · "+open+" active · "+mine+" assigned to you";
- const canManage=["owner","admin","agent"].includes(memberRole);
+ const canManage=["owner","admin","agent"].includes(uiRole());
  document.getElementById("ticketList").innerHTML=visible.map(t=>{
   const current=db.members.find(m=>m.user_id===t.assigned_to);
   const label=current?(current.display_name||current.email||"Team member"):(t.assigned_to?"Assigned teammate":"Unassigned");
-  const choices=memberRole==="owner"||memberRole==="admin"?roster:(memberRole==="agent"?roster.filter(m=>m.user_id===currentUser?.id):[]);
+  const choices=uiRole()==="owner"||uiRole()==="admin"?roster:(uiRole()==="agent"?roster.filter(m=>m.user_id===currentUser?.id):[]);
   let options='<option value="">Unassigned</option>'+choices.map(m=>'<option value="'+m.user_id+'" '+(t.assigned_to===m.user_id?"selected":"")+'>'+safe(m.display_name||m.email||"Team member")+' · '+safe(m.member_role)+'</option>').join("");
   if(t.assigned_to&&!choices.some(m=>m.user_id===t.assigned_to))options+='<option value="'+t.assigned_to+'" selected>Current assignee</option>';
   return '<div class="knowledge-item ticket-card"><div class="ticket-top"><b>'+safe(t.subject)+'</b><select data-ticket-status="'+t.id+'" '+(!canManage?'disabled':'')+'><option value="open" '+(t.status==="open"?"selected":"")+'>Open</option><option value="in_progress" '+(t.status==="in_progress"?"selected":"")+'>In progress</option><option value="waiting_customer" '+(t.status==="waiting_customer"?"selected":"")+'>Waiting</option><option value="resolved" '+(t.status==="resolved"?"selected":"")+'>Resolved</option><option value="closed" '+(t.status==="closed"?"selected":"")+'>Closed</option></select></div><p>'+safe(t.description||"")+'</p><div class="ticket-meta"><span>Assigned: <b>'+safe(label)+'</b></span><span>'+new Date(t.created_at).toLocaleString()+'</span></div><label class="ticket-assignment">Assign to<select data-ticket-assignee="'+t.id+'" '+(!canManage?'disabled':'')+'>'+options+'</select></label></div>';
@@ -246,7 +250,7 @@ function renderLaunchCenter(){
  if(!db.agents.some(a=>a.id===launchAgentId))launchAgentId=db.agents[0]?.id||null;
  select.innerHTML=db.agents.map(a=>'<option value="'+safe(a.id)+'" '+(a.id===launchAgentId?'selected':'')+'>'+safe(a.name)+'</option>').join("")||'<option value="">Create an AI executive first</option>';
  select.disabled=!db.agents.length;
- const agent=db.agents.find(a=>a.id===launchAgentId),isAdmin=["owner","admin"].includes(memberRole),hasKnowledge=db.knowledge.length>0;
+ const agent=db.agents.find(a=>a.id===launchAgentId),isAdmin=["owner","admin"].includes(uiRole()),hasKnowledge=db.knowledge.length>0;
  const domains=db.widgetDomains.filter(d=>d.executive_id===launchAgentId),verifiedDomains=domains.filter(d=>!!d.verified_at),enabled=!!agent?.widget_enabled;
  const ready=!!agent&&hasKnowledge&&verifiedDomains.length>0,website=db.business.website;
  const steps=[
@@ -590,6 +594,7 @@ document.getElementById("listen").onclick=()=>{
  try{rec.start()}catch(e){document.getElementById("voiceStatus").textContent="Could not start microphone. Check permission."}
 };
 document.getElementById("stop").onclick=()=>{if(rec){rec.stop();rec=null}if("speechSynthesis"in window)speechSynthesis.cancel();document.getElementById("voiceStatus").textContent="Voice stopped."};
+document.getElementById("rolePreviewSelect")?.addEventListener("change",e=>{previewRole=e.target.value;render();renderConversations();renderTickets();renderLaunchCenter();toast("Preview changed. Real permissions are unchanged.");});
 if(supabase){
  supabase.auth.getSession().then(({data})=>loadWorkspace(data.session));
  supabase.auth.onAuthStateChange((event,session)=>{if(event==="SIGNED_IN"||event==="TOKEN_REFRESHED")loadWorkspace(session);if(event==="SIGNED_OUT")loadWorkspace(null)});
