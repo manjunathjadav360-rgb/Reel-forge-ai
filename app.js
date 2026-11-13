@@ -78,8 +78,8 @@ async function loadWorkspace(session){
 async function saveAgent(values){
  if(!requireWorkspace())return;
  const {data,error}=await supabase.from("ai_executives").insert({business_id:businessId,name:values.name,role:values.role,greeting:values.greeting,language:values.language}).select().single();
- if(error){toast("Could not save executive: "+error.message);return}
- db.agents.push({id:data.id,name:data.name,role:data.role,greeting:data.greeting,language:data.language});render();toast("AI executive saved to cloud");
+ if(error){toast("Could not save executive: "+error.message);return false}
+ db.agents.push({id:data.id,name:data.name,role:data.role,greeting:data.greeting,language:data.language});render();toast("AI executive saved to cloud");return true;
 }
 async function deleteAgent(id){
  if(!requireWorkspace())return;
@@ -90,8 +90,8 @@ async function deleteAgent(id){
 async function saveKnowledge(q,a){
  if(!requireWorkspace())return;
  const {data,error}=await supabase.from("knowledge_items").insert({business_id:businessId,question:q,answer:a}).select().single();
- if(error){toast("Could not save knowledge: "+error.message);return}
- db.knowledge.push({id:data.id,q:data.question,a:data.answer});render();toast("Knowledge saved to cloud");
+ if(error){toast("Could not save knowledge: "+error.message);return false}
+ db.knowledge.push({id:data.id,q:data.question,a:data.answer});render();toast("Knowledge saved to cloud");return true;
 }
 async function deleteKnowledge(id){
  if(!requireWorkspace())return;
@@ -118,15 +118,15 @@ document.querySelectorAll(".backdrop").forEach(x=>x.addEventListener("click",e=>
 document.getElementById("agentForm").addEventListener("submit",async e=>{
  e.preventDefault();if(!requireWorkspace())return;
  const submit=e.target.querySelector('button[type="submit"],button:not([type])');if(submit)submit.disabled=true;
- await saveAgent({name:document.getElementById("agentName").value.trim(),role:document.getElementById("role").value,greeting:document.getElementById("greeting").value,language:document.getElementById("agentLanguage").value});
+ const saved=await saveAgent({name:document.getElementById("agentName").value.trim(),role:document.getElementById("role").value,greeting:document.getElementById("greeting").value,language:document.getElementById("agentLanguage").value});
  if(submit)submit.disabled=false;
- if(db.agents.length&&db.agents[db.agents.length-1].name===document.getElementById("agentName").value.trim()){e.target.reset();modal("createModal",false);page("agents")}
+ if(saved){e.target.reset();modal("createModal",false);page("agents")}
 });
 document.getElementById("knowledgeForm").addEventListener("submit",async e=>{
  e.preventDefault();if(!requireWorkspace())return;
  const q=document.getElementById("question").value.trim(),a=document.getElementById("answer").value.trim();
- const submit=e.target.querySelector("button");submit.disabled=true;await saveKnowledge(q,a);submit.disabled=false;
- if(db.knowledge.some(k=>k.q===q&&k.a===a)){e.target.reset()}
+ const submit=e.target.querySelector("button");submit.disabled=true;const saved=await saveKnowledge(q,a);submit.disabled=false;
+ if(saved)e.target.reset()
 });
 document.getElementById("businessForm").addEventListener("submit",async e=>{
  e.preventDefault();const submit=e.target.querySelector("button");submit.disabled=true;
