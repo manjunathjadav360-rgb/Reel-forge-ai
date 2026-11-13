@@ -55,7 +55,7 @@ Deno.serve(async (req: Request) => {
     const records = answers.filter((answer: { type?: number }) => answer.type === 16)
       .map((answer: { data?: string }) => String(answer.data || "").replace(/"/g, "").trim());
     if (!records.includes(recordValue)) {
-      return json({ verified: false, record_name: recordName, record_value: recordValue, message: "The verification TXT record was not found yet. Add it to your DNS provider, wait for DNS propagation, then verify again." }, 422);
+      return json({ verified: false, record_name: recordName, record_value: recordValue, message: "The verification TXT record was not found yet. Add it to your DNS provider, wait for DNS propagation, then verify again." }, 200);
     }
     const { data: updated, error: updateError } = await admin.from("widget_domains")
       .update({ verified_at: new Date().toISOString() }).eq("id", domainId).eq("business_id", businessId)
