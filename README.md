@@ -82,3 +82,11 @@ New business owners can complete a guided setup in the dashboard: business profi
 - Dashboard test conversations and the public website widget retrieve up to 8 matching approved knowledge entries instead of loading up to 80 unrelated entries.
 - Search is scoped by business and AI executive; the SQL function runs as invoker and respects authenticated workspace RLS.
 - This is keyword-based retrieval, not embeddings or semantic vector search. Test with real FAQs in multiple languages before production.
+
+
+### Semantic knowledge search
+- pgvector stores 1536-dimensional embeddings for approved knowledge.
+- Workspace owners/admins can build or refresh the semantic index from the Knowledge Base preview.
+- Dashboard assistant and website widget use cosine similarity when query embeddings are available, then fall back to the existing multilingual keyword search.
+- Configure `AIKIVO_EMBEDDING_API_KEY` (or a compatible `AIKIVO_LLM_API_KEY`), optionally `AIKIVO_EMBEDDING_URL` and `AIKIVO_EMBEDDING_MODEL`. The default model is `text-embedding-3-small`.
+- The selected embedding provider must return 1536 dimensions. Embedding provider charges may apply.
