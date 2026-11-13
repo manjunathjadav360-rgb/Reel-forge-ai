@@ -125,7 +125,7 @@ async function loadWorkspace(session){
   const targetBusinessId=membership.business_id;
   memberRole=membership.member_role||"viewer";
   const business=Array.isArray(membership.businesses)?membership.businesses[0]:membership.businesses;
-  const [agentsRes,knowledgeRes,sourcesRes,conversationsRes,ticketsRes,membersRes]=await Promise.all([
+  const [agentsRes,knowledgeRes,sourcesRes,conversationsRes,ticketsRes,membersRes,domainsRes]=await Promise.all([
    supabase.from("ai_executives").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
    supabase.from("knowledge_items").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
    supabase.from("knowledge_sources").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:false}),
