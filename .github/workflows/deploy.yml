@@ -37,7 +37,7 @@ jobs:
           test -f supabase/functions/aikivo-ai/index.ts
           test -f supabase/functions/aikivo-domain-verify/index.ts
           test -f supabase/widget-domains.sql
-          node -e 'const fs=require("fs");const h=fs.readFileSync("index.html","utf8");for(const id of ["page-overview","page-agents","page-knowledge","page-conversations","page-phone","page-settings","agentForm","knowledgeForm","chatForm","launchCenter","launchExecutiveSelect","launchPublishButton","launchEmbedCode"])if(!h.includes(id))throw Error("Missing UI element: "+id);console.log("AIKIVO screens verified")'
+          node -e 'const fs=require("fs");const h=fs.readFileSync("index.html","utf8");for(const id of ["page-overview","page-agents","page-knowledge","page-conversations","page-phone","page-settings","agentForm","knowledgeForm","chatForm","launchCenter","launchExecutiveSelect","launchPublishButton","launchEmbedCode","launchDomainInput","launchAddDomainButton","launchDomainList"])if(!h.includes(id))throw Error("Missing UI element: "+id);console.log("AIKIVO screens verified")'
 
   deploy:
     if: github.event_name != 'pull_request'
