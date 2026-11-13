@@ -521,3 +521,6 @@ with check (
 drop policy if exists "Admins remove widget domains" on public.widget_domains;
 create policy "Admins remove widget domains" on public.widget_domains for delete to authenticated
 using (exists(select 1 from public.business_members bm where bm.business_id=widget_domains.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin')));
+
+alter table public.widget_domains add column if not exists verification_token text not null default encode(gen_random_bytes(24),'hex');
+alter table public.widget_domains add column if not exists verified_at timestamptz;
