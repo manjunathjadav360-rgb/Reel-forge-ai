@@ -24,6 +24,8 @@ function render(){
  document.getElementById("memberRoleLabel").textContent=memberRole.toUpperCase();
  document.querySelectorAll("[data-create]").forEach(b=>b.hidden=!["owner","admin"].includes(memberRole));
  document.getElementById("knowledgeForm").hidden=!["owner","admin"].includes(memberRole);
+ document.getElementById("websiteTrainForm").hidden=!["owner","admin"].includes(memberRole);
+ document.getElementById("textTrainForm").hidden=!["owner","admin"].includes(memberRole);
  document.getElementById("businessForm").querySelectorAll("input,select,button").forEach(el=>el.disabled=!["owner","admin"].includes(memberRole));
  document.getElementById("teamRole").textContent=memberRole.charAt(0).toUpperCase()+memberRole.slice(1);
  document.getElementById("teamPermissionSummary").textContent=memberRole==="owner"?"Full workspace control, including business settings, AI executives, knowledge and team management.":memberRole==="admin"?"Manage business settings, AI executives, knowledge and support. Invite agents and viewers.":"Handle conversations and support tickets. Workspace configuration is read-only.";
