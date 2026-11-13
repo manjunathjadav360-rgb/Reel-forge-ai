@@ -1,5 +1,5 @@
 const supabase = window.aikivoSupabase;
-const emptyData = () => ({business:{name:"My Business",industry:"Other",website:"",language:"English"},agents:[],knowledge:[],chats:[],tickets:[]});
+const emptyData = () => ({business:{name:"My Business",industry:"Other",website:"",language:"English"},agents:[],knowledge:[],chats:[],tickets:[],members:[]});
 let db = emptyData();
 let active = null;
 let activeConversationId = null;
@@ -21,7 +21,10 @@ function render(){
  document.getElementById("knowledgeForm").hidden=!["owner","admin"].includes(memberRole);
  document.getElementById("businessForm").querySelectorAll("input,select,button").forEach(el=>el.disabled=!["owner","admin"].includes(memberRole));
  document.getElementById("teamRole").textContent=memberRole.charAt(0).toUpperCase()+memberRole.slice(1);
- document.getElementById("teamPermissionSummary").textContent=memberRole==="owner"?"Full workspace control, including business settings, AI executives, knowledge and support.":memberRole==="admin"?"Manage business settings, AI executives, knowledge and support.":memberRole==="agent"?"Handle conversations and support tickets. Business settings, AI executives and knowledge are read-only.":"View workspace information and support tickets. Editing and customer handling are disabled.";
+ document.getElementById("teamPermissionSummary").textContent=memberRole==="owner"?"Full workspace control, including business settings, AI executives, knowledge and team management.":memberRole==="admin"?"Manage business settings, AI executives, knowledge and support. Invite agents and viewers.":"Handle conversations and support tickets. Workspace configuration is read-only.";
+ document.getElementById("invitePanel").hidden=!(memberRole==="owner"||memberRole==="admin");
+ document.getElementById("inviteRoleAdmin").hidden=memberRole!=="owner";
+ document.getElementById("teamList").innerHTML=db.members.map(m=>{const editable=["owner","admin"].includes(memberRole)&&m.member_role!=="owner"&&m.user_id!==currentUser?.id;const opts=(memberRole==="owner"?["admin","agent","viewer"]:["agent","viewer"]).map(r=>`<option value="${r}" ${m.member_role===r?"selected":""}>${r}</option>`).join("");return `<div class="team-row"><div class="team-person"><b>${safe(m.display_name||m.email||"Team member")}</b><small>${safe(m.email||"Email unavailable")}</small></div><span class="team-role">${safe(m.member_role)}</span>${editable?`<select data-member-role="${m.user_id}">${opts}</select><button class="secondary" data-member-remove="${m.user_id}">Remove</button>`:""}</div>`}).join("")||`<p class="empty">No team members found.</p>`;
  document.getElementById("agentCount").textContent=db.agents.length;
  document.getElementById("knowledgeCount").textContent=db.knowledge.length;
  document.getElementById("chatCount").textContent=db.chats.length;
@@ -48,16 +51,18 @@ async function loadWorkspace(session){
   const targetBusinessId=membership.business_id;
   memberRole=membership.member_role||"viewer";
   const business=Array.isArray(membership.businesses)?membership.businesses[0]:membership.businesses;
-  const [agentsRes,knowledgeRes,conversationsRes,ticketsRes]=await Promise.all([
+  const [agentsRes,knowledgeRes,conversationsRes,ticketsRes,membersRes]=await Promise.all([
    supabase.from("ai_executives").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
    supabase.from("knowledge_items").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:true}),
    supabase.from("conversations").select("*").eq("business_id",targetBusinessId).order("started_at",{ascending:false}),
-   supabase.from("support_tickets").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:false})
+   supabase.from("support_tickets").select("*").eq("business_id",targetBusinessId).order("created_at",{ascending:false}),
+   supabase.from("business_members").select("user_id,email,display_name,member_role,created_at").eq("business_id",targetBusinessId).order("created_at",{ascending:true})
   ]);
   if(agentsRes.error)throw agentsRes.error;
   if(knowledgeRes.error)throw knowledgeRes.error;
   if(conversationsRes.error)throw conversationsRes.error;
   if(ticketsRes.error)throw ticketsRes.error;
+  if(membersRes.error)throw membersRes.error;
   const conversations=conversationsRes.data||[];
   let messages=[];
   if(conversations.length){
@@ -71,6 +76,7 @@ async function loadWorkspace(session){
   db.agents=(agentsRes.data||[]).map(a=>({id:a.id,name:a.name,role:a.role,greeting:a.greeting,language:a.language}));
   db.knowledge=(knowledgeRes.data||[]).map(k=>({id:k.id,q:k.question,a:k.answer}));
   db.tickets=ticketsRes.data||[];
+  db.members=membersRes.data||[];
   const agentNames=new Map(db.agents.map(a=>[a.id,a.name]));
   db.chats=conversations.map(c=>{
    const rows=messages.filter(m=>m.conversation_id===c.id);
@@ -125,6 +131,7 @@ document.addEventListener("click",e=>{
  let t=e.target.closest("[data-test]");if(t)openTest(t.dataset.test);
  let r=e.target.closest("[data-remove]");if(r&&confirm("Delete this executive and its linked knowledge?"))deleteAgent(r.dataset.remove);
  let k=e.target.closest("[data-kremove]");if(k)deleteKnowledge(k.dataset.kremove);
+ let member=e.target.closest("[data-member-remove]");if(member&&confirm("Remove this person from the workspace?"))removeTeamMember(member.dataset.memberRemove);
 });
 document.querySelectorAll(".backdrop").forEach(x=>x.addEventListener("click",e=>{if(e.target===x)x.classList.remove("open")}));
 document.getElementById("agentForm").addEventListener("submit",async e=>{
@@ -139,6 +146,16 @@ document.getElementById("knowledgeForm").addEventListener("submit",async e=>{
  const q=document.getElementById("question").value.trim(),a=document.getElementById("answer").value.trim();
  const submit=e.target.querySelector("button");submit.disabled=true;const saved=await saveKnowledge(q,a);submit.disabled=false;
  if(saved)e.target.reset()
+});
+document.getElementById("inviteForm").addEventListener("submit",async e=>{
+ e.preventDefault();if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
+ const email=document.getElementById("inviteEmail").value.trim();const role=document.getElementById("inviteRole").value;
+ const submit=e.target.querySelector("button");const note=document.getElementById("inviteMessage");submit.disabled=true;note.textContent="Sending invitation…";
+ const {data,error}=await supabase.functions.invoke("aikivo-invite",{body:{email,role}});
+ submit.disabled=false;
+ if(error||data?.error){note.textContent=data?.error||error?.message||"Invitation failed.";toast(note.textContent);return}
+ note.textContent="Invitation email sent to "+email+".";toast("Team invitation sent.");e.target.reset();
+ const {data:sessionData}=await supabase.auth.getSession();await loadWorkspace(sessionData.session);
 });
 document.getElementById("businessForm").addEventListener("submit",async e=>{
  e.preventDefault();const submit=e.target.querySelector("button");submit.disabled=true;
@@ -183,7 +200,8 @@ if(aiResult.handoffRecommended||aiResult.mode==="handoff"){const {data:ticket,er
  const saved=db.chats.find(c=>c.id===activeConversationId);
  if(saved){saved.q+=(saved.q?"\n":"")+q;saved.a+=(saved.a?"\n":"")+ans;render()}
 }
-document.addEventListener("change",async e=>{const s=e.target.closest("[data-ticket-status]");if(!s)return;const {error}=await supabase.from("support_tickets").update({status:s.value,updated_at:new Date().toISOString()}).eq("id",s.dataset.ticketStatus);if(error){toast("Ticket update failed: "+error.message);return}const t=db.tickets.find(x=>x.id===s.dataset.ticketStatus);if(t)t.status=s.value;render();toast("Ticket updated.")});
+document.addEventListener("change",async e=>{const role=e.target.closest("[data-member-role]");if(role){const {error}=await supabase.from("business_members").update({member_role:role.value}).eq("business_id",businessId).eq("user_id",role.dataset.memberRole);if(error){toast("Role update failed: "+error.message);const {data}=await supabase.auth.getSession();await loadWorkspace(data.session);return}const person=db.members.find(m=>m.user_id===role.dataset.memberRole);if(person)person.member_role=role.value;render();toast("Team role updated.");return}const s=e.target.closest("[data-ticket-status]");if(!s)return;const {error}=await supabase.from("support_tickets").update({status:s.value,updated_at:new Date().toISOString()}).eq("id",s.dataset.ticketStatus);if(error){toast("Ticket update failed: "+error.message);return}const t=db.tickets.find(x=>x.id===s.dataset.ticketStatus);if(t)t.status=s.value;render();toast("Ticket updated.")});
+async function removeTeamMember(userId){const {error}=await supabase.from("business_members").delete().eq("business_id",businessId).eq("user_id",userId);if(error){toast("Could not remove member: "+error.message);return}db.members=db.members.filter(m=>m.user_id!==userId);render();toast("Team member removed.");}
 document.getElementById("chatForm").addEventListener("submit",e=>{e.preventDefault();let i=document.getElementById("chatInput"),q=i.value.trim();if(q){i.value="";respond(q)}});
 document.getElementById("listen").onclick=()=>{
  let SR=window.SpeechRecognition||window.webkitSpeechRecognition;
