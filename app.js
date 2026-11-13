@@ -316,6 +316,15 @@ document.getElementById("agentForm").addEventListener("submit",async e=>{
  if(submit)submit.disabled=false;
  if(saved){e.target.reset();modal("createModal",false);page("agents")}
 });
+document.getElementById("buildSemanticIndex").addEventListener("click",async()=>{
+ if(!requireWorkspace()||!["owner","admin"].includes(memberRole))return;
+ const button=document.getElementById("buildSemanticIndex");
+ button.disabled=true;button.textContent="Indexing…";
+ const {data,error}=await supabase.functions.invoke("aikivo-embed",{body:{businessId}});
+ button.disabled=false;button.textContent="Build semantic index";
+ if(error||data?.error){toast(data?.error||error?.message||"Semantic indexing failed.");return}
+ toast("Indexed "+data.indexed+" entries. "+(data.remaining?data.remaining+" remain without vectors.":"All current entries are indexed."));
+});
 document.getElementById("knowledgeSearchForm").addEventListener("submit",async e=>{
  e.preventDefault();
  if(!requireWorkspace())return;
