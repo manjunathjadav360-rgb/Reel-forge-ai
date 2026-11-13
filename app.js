@@ -22,6 +22,7 @@ function render(){
  document.getElementById("sideBusiness").textContent=db.business.name;
  renderOnboardingPanel();
  document.getElementById("memberRoleLabel").textContent=memberRole.toUpperCase();
+ document.getElementById("buildSemanticIndex").hidden=!["owner","admin"].includes(memberRole);
  document.querySelectorAll("[data-create]").forEach(b=>b.hidden=!["owner","admin"].includes(memberRole));
  document.getElementById("knowledgeForm").hidden=!["owner","admin"].includes(memberRole);
  document.getElementById("websiteTrainForm").hidden=!["owner","admin"].includes(memberRole);
