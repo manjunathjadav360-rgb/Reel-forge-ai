@@ -2,7 +2,6 @@
   const client = window.aikivoSupabase;
   if (!client) return;
   const screen = document.getElementById("authScreen");
-  const card = screen.querySelector(".auth-card");
   const form = document.getElementById("authForm");
   const heading = document.getElementById("authHeading");
   const sub = document.getElementById("authSub");
@@ -18,17 +17,9 @@
   let mode = "signin";
   let busy = false;
 
-  const forgot = document.createElement("button");
-  forgot.type = "button";
-  forgot.textContent = "Forgot password?";
-  forgot.style.cssText = "display:block;margin:12px auto 0;background:none;border:0;color:#6476c8;font:inherit;cursor:pointer";
-  form.insertAdjacentElement("afterend", forgot);
-
-  const recovery = document.createElement("form");
-  recovery.hidden = true;
-  recovery.style.cssText = "margin-top:18px;display:grid;gap:12px";
-  recovery.innerHTML = '<label>New password<input id="aikivoNewPassword" type="password" minlength="8" autocomplete="new-password" required placeholder="At least 8 characters"></label><label>Confirm new password<input id="aikivoConfirmPassword" type="password" minlength="8" autocomplete="new-password" required placeholder="Enter it again"></label><button class="primary" type="submit">Update password</button>';
-  card.appendChild(recovery);
+  const forgot = document.getElementById("forgotPassword");
+  const recovery = document.getElementById("passwordRecoveryForm");
+  if (!forgot || !recovery) return;
 
   function say(text, error) {
     message.textContent = text || "";
