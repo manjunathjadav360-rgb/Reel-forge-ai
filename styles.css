@@ -34,3 +34,5 @@
 .forgot-password{display:block;margin:12px auto 0;padding:4px 8px;border:0;background:transparent;color:#365ce8;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
 .forgot-password:hover{text-decoration:underline}
 .auth-card form[hidden],.auth-card [hidden]{display:none!important}
+
+.scenario-prompts{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}.scenario-prompts button{font-size:10px;padding:8px 10px}
