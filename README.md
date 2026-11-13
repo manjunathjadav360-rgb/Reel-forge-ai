@@ -49,3 +49,8 @@ Enable GitHub Pages in repository Settings → Pages and verify the Pages workfl
 - Invitations use Supabase Auth email delivery. Configure the project's Auth email/SMTP settings and allow the GitHub Pages redirect URL if delivery is not enabled.
 
 - This first version supports inviting new email addresses only; existing AIKIVO accounts need a future workspace-switching flow before joining another business.
+
+
+### Support ticket assignment
+
+Support tickets include an optional `assigned_to` workspace member. Owners and admins can assign tickets to owners, admins, or agents; agents can claim tickets for themselves. The Support inbox includes All, Assigned to me, and Unassigned filters plus active-ticket workload counts. A composite foreign key prevents cross-workspace assignments and automatically clears the assignee when a team member is removed. A database trigger rejects assignments to viewers or users outside the workspace.
