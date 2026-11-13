@@ -92,3 +92,12 @@ New business owners can complete a guided setup in the dashboard: business profi
 - The selected embedding provider must return 1536 dimensions. Embedding provider charges may apply.
 
 - New and imported FAQ/document knowledge automatically triggers a semantic-index refresh when an embedding provider is configured. Editing an answer invalidates its old vector so it can be regenerated. If indexing is unavailable, keyword retrieval continues to work.
+
+
+## AI answer quality and human handoff
+
+- AI replies are gated by retrieved approved knowledge: semantic matches must score at least 0.45 cosine similarity; keyword matches must have a positive full-text rank.
+- If no evidence passes retrieval, AIKIVO returns a fixed verified-information response and recommends human support instead of asking the language model to guess.
+- Knowledge and chat history are explicitly treated as untrusted data in the model prompt, not as instructions.
+- Unsupported website-widget conversations are escalated and create at most one active handoff ticket per conversation. Dashboard test conversations use the same handoff recommendation and avoid duplicate active tickets.
+- Retrieval scores are evidence filters, not calibrated probabilities or a guarantee that every generated answer is correct. Businesses should review AI replies and maintain accurate approved knowledge.
