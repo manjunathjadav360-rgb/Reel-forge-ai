@@ -546,7 +546,8 @@ begin
  return new;
 end;
 $$;
-revoke all on function private.enforce_widget_domain_verified() from public,anon,authenticated;
+revoke all on function private.enforce_widget_domain_verified() from public,anon;
+grant execute on function private.enforce_widget_domain_verified() to authenticated,service_role;
 drop trigger if exists ai_executives_require_verified_widget_domain on public.ai_executives;
 create trigger ai_executives_require_verified_widget_domain
 before insert or update of widget_enabled on public.ai_executives
