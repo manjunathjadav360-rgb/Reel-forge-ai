@@ -101,3 +101,10 @@ New business owners can complete a guided setup in the dashboard: business profi
 - Knowledge and chat history are explicitly treated as untrusted data in the model prompt, not as instructions.
 - Unsupported website-widget conversations are escalated and create at most one active handoff ticket per conversation. Dashboard test conversations use the same handoff recommendation and avoid duplicate active tickets.
 - Retrieval scores are evidence filters, not calibrated probabilities or a guarantee that every generated answer is correct. Businesses should review AI replies and maintain accurate approved knowledge.
+
+
+## AI testing and evaluation center
+- Workspace owners and admins can run up to 10 sample customer questions per batch against an AI executive.
+- Each test returns the proposed answer, retrieval status, and the strongest approved FAQ evidence with its retrieval score.
+- Tests are read-only: they do not create customer conversations, send widget messages, or create support tickets.
+- Questions with no qualifying approved knowledge are marked for human review. A positive retrieval match is evidence discovery, not proof that a generated answer is factually correct; review results before enabling a customer-facing assistant.
