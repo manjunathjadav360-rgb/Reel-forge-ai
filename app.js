@@ -137,7 +137,7 @@ function openTest(id){
  active=id;let a=db.agents.find(x=>x.id===id);if(!a)return;
  document.getElementById("testTitle").textContent="Test "+a.name;
  document.getElementById("chat").innerHTML='<div class="bubble bot">'+safe(a.greeting)+'</div>';
- document.getElementById("voiceStatus").textContent="Browser voice playground. This does not place a phone call.";
+ document.getElementById("voiceStatus").textContent="AI replies run through your secure workspace AI engine. This test does not place a phone call.";
  modal("testModal",true);
 }
 function bubble(s,type){let d=document.createElement("div");d.className="bubble "+type;d.textContent=s;let c=document.getElementById("chat");c.appendChild(d);c.scrollTop=c.scrollHeight}
