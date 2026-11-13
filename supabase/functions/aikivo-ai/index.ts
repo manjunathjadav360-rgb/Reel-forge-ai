@@ -13,6 +13,26 @@ function json(body: unknown, status = 200) {
   });
 }
 
+async function createKnowledgeEmbedding(text: string): Promise<number[] | null> {
+  const key = Deno.env.get("AIKIVO_EMBEDDING_API_KEY") || Deno.env.get("AIKIVO_LLM_API_KEY");
+  if (!key) return null;
+  const endpoint = Deno.env.get("AIKIVO_EMBEDDING_URL") || "https://api.openai.com/v1/embeddings";
+  const model = Deno.env.get("AIKIVO_EMBEDDING_MODEL") || "text-embedding-3-small";
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({ model, input: text.slice(0, 6000) }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error("Embedding provider returned HTTP " + response.status);
+  const result = await response.json();
+  const vector = result.data?.[0]?.embedding;
+  if (!Array.isArray(vector) || vector.length !== 1536 || vector.some((n: unknown) => typeof n !== "number" || !Number.isFinite(n))) {
+    throw new Error("Embedding model must return 1536 numeric dimensions.");
+  }
+  return vector as number[];
+}
+
 function fallbackAnswer(question: string, knowledge: Array<{ question: string; answer: string }>) {
   const words = question.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? [];
   const ranked = knowledge.map((item) => {
@@ -107,16 +127,29 @@ Deno.serve(async (req: Request) => {
       .single();
     if (businessError || !business) return json({ error: "Business workspace not found." }, 404);
 
-    const { data: knowledge, error: knowledgeError } = await supabase.rpc("search_aikivo_knowledge", {
-      p_business_id: executive.business_id,
-      p_executive_id: executiveId,
-      p_query: message,
-      p_limit: 8,
-      p_language: executive.language || business.default_language || "English",
-    });
-    if (knowledgeError) {
-      console.error("Knowledge search error", knowledgeError);
-      return json({ error: "Could not search this business's knowledge base." }, 500);
+    let knowledge: Array<{ question: string; answer: string }> | null = null;
+    try {
+      const queryEmbedding = await createKnowledgeEmbedding(message);
+      if (queryEmbedding) {
+        const semantic = await supabase.rpc("search_aikivo_knowledge_semantic", {
+          p_business_id: executive.business_id, p_executive_id: executiveId,
+          p_query_embedding: `[${queryEmbedding.join(",")}]`, p_limit: 8,
+        });
+        if (!semantic.error && semantic.data?.length) knowledge = semantic.data;
+        else if (semantic.error) console.warn("Semantic search unavailable; using keyword search.", semantic.error.message);
+      }
+    } catch (error) { console.warn("Semantic search unavailable; using keyword search.", error); }
+    if (!knowledge) {
+      const lexical = await supabase.rpc("search_aikivo_knowledge", {
+        p_business_id: executive.business_id, p_executive_id: executiveId,
+        p_query: message, p_limit: 8,
+        p_language: executive.language || business.default_language || "English",
+      });
+      if (lexical.error) {
+        console.error("Knowledge search error", lexical.error);
+        return json({ error: "Could not search this business's knowledge base." }, 500);
+      }
+      knowledge = lexical.data ?? [];
     }
 
     const apiKey = Deno.env.get("AIKIVO_LLM_API_KEY");
