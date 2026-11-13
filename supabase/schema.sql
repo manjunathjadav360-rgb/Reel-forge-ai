@@ -378,3 +378,12 @@ create index if not exists knowledge_items_source_idx on public.knowledge_items(
 alter table public.knowledge_sources enable row level security;
 create policy "workspace admins manage knowledge sources" on public.knowledge_sources for all to authenticated using (exists(select 1 from public.business_members bm where bm.business_id=knowledge_sources.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin'))) with check (exists(select 1 from public.business_members bm where bm.business_id=knowledge_sources.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin')));
 grant select,insert,update,delete on public.knowledge_sources to authenticated;
+
+-- Imported AI knowledge sources
+create table if not exists public.knowledge_sources (id uuid primary key default gen_random_uuid(), business_id uuid not null references public.businesses(id) on delete cascade, source_type text not null check(source_type in ('website','text_file')), title text not null, source_url text, file_name text, status text not null default 'ready' check(status in ('processing','ready','failed')), item_count integer not null default 0 check(item_count>=0), created_by uuid references auth.users(id) on delete set null, created_at timestamptz not null default now());
+alter table public.knowledge_items add column if not exists source_id uuid references public.knowledge_sources(id) on delete cascade;
+create index if not exists knowledge_sources_business_created_idx on public.knowledge_sources(business_id,created_at desc);
+create index if not exists knowledge_items_source_idx on public.knowledge_items(source_id);
+alter table public.knowledge_sources enable row level security;
+create policy "workspace admins manage knowledge sources" on public.knowledge_sources for all to authenticated using (exists(select 1 from public.business_members bm where bm.business_id=knowledge_sources.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin'))) with check (exists(select 1 from public.business_members bm where bm.business_id=knowledge_sources.business_id and bm.user_id=(select auth.uid()) and bm.member_role in ('owner','admin')));
+grant select,insert,update,delete on public.knowledge_sources to authenticated;
