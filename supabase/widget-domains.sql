@@ -36,3 +36,30 @@ using (exists(select 1 from public.business_members bm where bm.business_id=widg
 
 alter table public.widget_domains add column if not exists verification_token text not null default encode(gen_random_bytes(24),'hex');
 alter table public.widget_domains add column if not exists verified_at timestamptz;
+
+-- Enforce verified domain ownership even if widget_enabled is changed outside the dashboard.
+create schema if not exists private;
+create or replace function private.enforce_widget_domain_verified()
+returns trigger
+language plpgsql
+set search_path=''
+as $$
+begin
+ if new.widget_enabled and (tg_op='INSERT' or not old.widget_enabled) then
+  if not exists (
+   select 1 from public.widget_domains wd
+   where wd.executive_id=new.id
+     and wd.business_id=new.business_id
+     and wd.verified_at is not null
+  ) then
+   raise exception using errcode='23514', message='Add and DNS-verify at least one website domain before publishing this widget.';
+  end if;
+ end if;
+ return new;
+end;
+$$;
+revoke all on function private.enforce_widget_domain_verified() from public,anon,authenticated;
+drop trigger if exists ai_executives_require_verified_widget_domain on public.ai_executives;
+create trigger ai_executives_require_verified_widget_domain
+before insert or update of widget_enabled on public.ai_executives
+for each row execute function private.enforce_widget_domain_verified();
