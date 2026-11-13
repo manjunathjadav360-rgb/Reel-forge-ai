@@ -107,13 +107,16 @@ Deno.serve(async (req: Request) => {
       .single();
     if (businessError || !business) return json({ error: "Business workspace not found." }, 404);
 
-    const { data: knowledge, error: knowledgeError } = await supabase
-      .from("knowledge_items")
-      .select("question,answer")
-      .eq("business_id", executive.business_id)
-      .or(`executive_id.is.null,executive_id.eq.${executiveId}`)
-      .limit(80);
-    if (knowledgeError) return json({ error: "Could not load this business's knowledge base." }, 500);
+    const { data: knowledge, error: knowledgeError } = await supabase.rpc("search_aikivo_knowledge", {
+      p_business_id: executive.business_id,
+      p_executive_id: executiveId,
+      p_query: message,
+      p_limit: 8,
+    });
+    if (knowledgeError) {
+      console.error("Knowledge search error", knowledgeError);
+      return json({ error: "Could not search this business's knowledge base." }, 500);
+    }
 
     const apiKey = Deno.env.get("AIKIVO_LLM_API_KEY");
     const baseUrl = (Deno.env.get("AIKIVO_LLM_BASE_URL") ?? "https://api.openai.com/v1/chat/completions").replace(/\/$/, "");
