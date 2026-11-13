@@ -71,9 +71,9 @@ as $$
   cross join (
     select
       websearch_to_tsquery('english'::regconfig,
-        regexp_replace(left(coalesce(p_query, ''), 500), '\\s+', ' or ', 'g')) as english_query,
+        regexp_replace(left(coalesce(p_query, ''), 500), '[[:space:]]+', ' or ', 'g')) as english_query,
       websearch_to_tsquery('simple'::regconfig,
-        regexp_replace(left(coalesce(p_query, ''), 500), '\\s+', ' or ', 'g')) as simple_query
+        regexp_replace(left(coalesce(p_query, ''), 500), '[[:space:]]+', ' or ', 'g')) as simple_query
   ) as parsed
   where k.business_id = p_business_id
     and (k.executive_id is null or k.executive_id = p_executive_id)
