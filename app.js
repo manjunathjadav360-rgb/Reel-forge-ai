@@ -46,6 +46,14 @@ function render(){
 }).join("");
  document.getElementById("agentList").innerHTML=cards||'<article class="card empty">No AI executives yet. Use Create executive to add one.</article>';
  document.getElementById("overviewAgents").innerHTML=db.agents.length?db.agents.slice(0,3).map(a=>'<p>◉　<b>'+safe(a.name)+'</b> — '+safe(a.role)+' <button class="link" data-test="'+a.id+'">Test</button></p>').join(""):"No AI executives yet. Create your first assistant.";
+ const searchExecutive=document.getElementById("knowledgeSearchExecutive");
+ if(searchExecutive){
+  const selected=searchExecutive.value;
+  searchExecutive.innerHTML=db.agents.map(a=>'<option value="'+safe(a.id)+'">'+safe(a.name)+' · '+safe(a.language)+'</option>').join("")||'<option value="">Create an AI executive first</option>';
+  if(db.agents.some(a=>a.id===selected))searchExecutive.value=selected;
+  searchExecutive.disabled=!db.agents.length;
+  document.getElementById("knowledgeSearchButton").disabled=!db.agents.length;
+ }
  document.getElementById("knowledgeList").innerHTML=db.knowledge.map(k=>'<div class="knowledge-item"><b>'+safe(k.q)+'</b><p>'+safe(k.a)+'</p><button class="delete" data-kremove="'+k.id+'">Remove</button></div>').join("")||'<p class="empty">No manual FAQs added yet.</p>';
  const sourceHost=document.getElementById("knowledgeSources");
  if(sourceHost)sourceHost.innerHTML=db.knowledgeSources.map(s=>'<div class="source-row"><div><b>'+safe(s.title)+'</b><small>'+safe(s.source_type==="website"?"Website":"Text file")+' · '+Number(s.item_count||0)+' sections · '+new Date(s.created_at).toLocaleDateString()+'</small></div><button class="delete" data-source-remove="'+s.id+'">Remove</button></div>').join("")||'<p class="empty">No imported sources yet.</p>';
@@ -307,6 +315,30 @@ document.getElementById("agentForm").addEventListener("submit",async e=>{
  const saved=await saveAgent({name:document.getElementById("agentName").value.trim(),role:document.getElementById("role").value,greeting:document.getElementById("greeting").value,language:document.getElementById("agentLanguage").value});
  if(submit)submit.disabled=false;
  if(saved){e.target.reset();modal("createModal",false);page("agents")}
+});
+document.getElementById("knowledgeSearchForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ if(!requireWorkspace())return;
+ const executiveId=document.getElementById("knowledgeSearchExecutive").value;
+ const query=document.getElementById("knowledgeSearchQuery").value.trim();
+ const executive=db.agents.find(a=>a.id===executiveId);
+ if(!executive||!query)return;
+ const button=document.getElementById("knowledgeSearchButton");
+ const status=document.getElementById("knowledgeSearchStatus");
+ const results=document.getElementById("knowledgeSearchResults");
+ button.disabled=true;status.textContent="Searching approved knowledge…";results.innerHTML="";
+ const {data,error}=await supabase.rpc("search_aikivo_knowledge",{
+  p_business_id:businessId,
+  p_executive_id:executiveId,
+  p_query:query,
+  p_limit:8,
+  p_language:executive.language||db.business.language||"English"
+ });
+ button.disabled=false;
+ if(error){status.textContent="Search failed. Please try again.";toast(error.message);return}
+ if(!data?.length){status.textContent="No matching knowledge found. Try different wording or add an approved FAQ.";results.innerHTML='<p class="empty">No matching answers found.</p>';return}
+ status.textContent="Found "+data.length+" relevant knowledge "+(data.length===1?"entry.":"entries.")+" This is a retrieval preview, not an AI-generated answer.";
+ results.innerHTML=data.map((item,index)=>'<article class="knowledge-result"><div class="knowledge-result-head"><b>Match '+(index+1)+'</b><small>Relevance '+(Number(item.relevance||0).toFixed(3))+'</small></div><b class="knowledge-result-question">'+safe(item.question)+'</b><p>'+safe(item.answer)+'</p></article>').join("");
 });
 document.getElementById("knowledgeForm").addEventListener("submit",async e=>{
  e.preventDefault();if(!requireWorkspace())return;
