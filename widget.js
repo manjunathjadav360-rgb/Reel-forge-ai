@@ -19,8 +19,12 @@
     frame.style.display=open?"none":"block";
     launcher.textContent=open?"Chat with us":"Close chat";
   });
-  document.body.appendChild(frame);
-  document.body.appendChild(launcher);
+  function mount(){
+    if(!document.body)return;
+    document.body.appendChild(frame);
+    document.body.appendChild(launcher);
+  }
+  if(document.body)mount();else document.addEventListener("DOMContentLoaded",mount,{once:true});
   window.addEventListener("message",function(event){
     if(event.origin!==new URL(base).origin||!event.data||event.data.type!=="AIKIVO_CLOSE")return;
     frame.style.display="none";launcher.textContent="Chat with us";
