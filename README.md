@@ -11,7 +11,7 @@ This repository has been repurposed from ReelForge AI to AIKIVO.
 - Browser voice playground using Web Speech API where supported.
 
 ## AI engine
-The authenticated Supabase Edge Function `aikivo-ai` is deployed with JWT verification enabled. It loads only the signed-in workspace's AI executive, approved knowledge and the latest 12 messages in the selected conversation. When configured, it sends that context to a server-side OpenAI-compatible chat-completions endpoint. Without a provider key, it uses a conservative FAQ match and offers human follow-up rather than inventing business facts.
+The authenticated Supabase Edge Function `aikivo-ai` is deployed with JWT verification enabled. It loads the signed-in workspace's AI executive, the latest 12 messages and up to 8 knowledge entries ranked for the customer's current question. The public website widget uses the same ranked search. PostgreSQL full-text search uses a generated `tsvector` column and GIN index; the SQL search function is `SECURITY INVOKER`, and each query is scoped to the business and selected AI executive. When configured, the assistant sends this focused context to a server-side OpenAI-compatible chat-completions endpoint. Without a provider key, it uses a conservative FAQ match and offers human follow-up rather than inventing business facts.
 
 To enable generative replies, add these **Edge Function secrets** in the Supabase project:
 - `AIKIVO_LLM_API_KEY` — provider API key (keep it server-side; never commit it).
@@ -74,3 +74,11 @@ New business owners can complete a guided setup in the dashboard: business profi
 - Document imports support selectable-text PDF and DOCX, plus TXT and Markdown.
 - PDF/DOCX are processed in the authenticated Edge Function; scanned image-only PDFs may not contain extractable text.
 - Current import limits: PDF/DOCX up to 5 MB; TXT/Markdown up to 100 KB; website crawl up to 8 pages.
+
+
+### Ranked AI knowledge retrieval
+- Knowledge questions and answers are indexed automatically with PostgreSQL full-text search.
+- Customer questions are searched with web-style query parsing and relevance ranking.
+- Dashboard test conversations and the public website widget retrieve up to 8 matching approved knowledge entries instead of loading up to 80 unrelated entries.
+- Search is scoped by business and AI executive; the SQL function runs as invoker and respects authenticated workspace RLS.
+- This is keyword-based retrieval, not embeddings or semantic vector search. Test with real FAQs in multiple languages before production.
