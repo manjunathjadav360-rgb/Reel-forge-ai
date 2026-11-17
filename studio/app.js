@@ -170,6 +170,54 @@
     return selected;
   }
 
+  function buildShotList(assets, duration, plan) {
+    const paceSeconds = plan.fast ? 1.9 : plan.slow ? 4.0 : 2.7;
+    const target = clamp(Math.round(duration / paceSeconds), Math.max(assets.length, 3), 14);
+    const maxPerAsset = assets.length === 1 ? 6 : 4;
+    const counts = assets.map(asset => asset.image ? 1 : asset.duration >= 18 ? 4 : asset.duration >= 9 ? 3 : asset.duration >= 4.5 ? 2 : 1);
+
+    if (assets.length === 1) {
+      counts[0] = Math.min(maxPerAsset, Math.max(counts[0], target));
+    } else {
+      let total = counts.reduce((sum, value) => sum + value, 0);
+      while (total < target) {
+        let best = -1;
+        let bestWeight = -Infinity;
+        for (let i = 0; i < assets.length; i++) {
+          if (counts[i] >= maxPerAsset) continue;
+          const asset = assets[i];
+          const weight = (asset.image ? 1.2 : Math.min(8, asset.duration)) / counts[i];
+          if (weight > bestWeight) { bestWeight = weight; best = i; }
+        }
+        if (best < 0) break;
+        counts[best]++;
+        total++;
+      }
+    }
+
+    const shots = [];
+    assets.forEach((asset, assetIndex) => {
+      const count = counts[assetIndex];
+      const sourceDuration = asset.image ? 0 : Math.max(0.5, asset.duration);
+      for (let shotIndex = 0; shotIndex < count; shotIndex++) {
+        const sourceStart = asset.image ? 0 : sourceDuration * shotIndex / count;
+        const sourceEnd = asset.image ? 0 : sourceDuration * (shotIndex + 1) / count;
+        shots.push({
+          asset,
+          assetIndex,
+          shotIndex,
+          shotCount: count,
+          sourceStart,
+          sourceEnd,
+          overlay: shotIndex === 0 && Array.isArray(plan.sceneOverlays)
+            ? (plan.sceneOverlays[state.assets.indexOf(asset)] || "")
+            : ""
+        });
+      }
+    });
+    return shots;
+  }
+
   function applyDirectorPlan(plan, director) {
     if (!director) return;
     plan.director = director;
@@ -577,14 +625,15 @@
     if (!ctx) throw new Error("This browser cannot create the video canvas.");
 
     const beats = plan.beatSync && state.audioFile ? await detectBeats(state.audioFile) : (plan.beatTimes || []);
-    const boundaries = createBoundaries(duration, state.assets.length, beats, plan.beatSync);
     const orderedAssets = orderedAssetsForPlan(plan);
-    const timeline = orderedAssets.map((asset, index) => ({
-      asset,
-      overlay: Array.isArray(plan.sceneOverlays) ? (plan.sceneOverlays[state.assets.indexOf(asset)] || "") : "",
+    const shotList = buildShotList(orderedAssets, duration, plan);
+    const boundaries = createBoundaries(duration, shotList.length, beats, plan.beatSync);
+    const timeline = shotList.map((shot, index) => ({
+      ...shot,
       start: boundaries[index],
       end: boundaries[index + 1],
-      duration: boundaries[index + 1] - boundaries[index]
+      duration: boundaries[index + 1] - boundaries[index],
+      endPoster: null
     }));
     const mimeCandidates = [
       "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
@@ -639,28 +688,40 @@
         }));
       }
 
+      const audioByAsset = new Map();
       for (const scene of timeline) {
         const asset = scene.asset;
         if (asset.image) continue;
         try {
-          asset.element.muted = false;
-          asset.element.volume = 1;
-          if (!asset.mediaAudioSource) asset.mediaAudioSource = audioContext.createMediaElementSource(asset.element);
-          const clipGain = audioContext.createGain();
-          const startAt = baseTime + scene.start;
-          const endAt = baseTime + scene.end;
-          const clipLevel = uploadedBuffer ? 0.14 : (production.musicBuffer ? 0.2 : (production.voice ? 0.27 : 0.72));
-          clipGain.gain.setValueAtTime(0.0001, baseTime);
-          clipGain.gain.setValueAtTime(0.0001, startAt);
-          clipGain.gain.linearRampToValueAtTime(clipLevel, Math.min(endAt, startAt + 0.12));
-          clipGain.gain.setValueAtTime(clipLevel, Math.max(startAt + 0.13, endAt - 0.13));
-          clipGain.gain.linearRampToValueAtTime(0.0001, endAt);
-          asset.mediaAudioSource.connect(clipGain);
-          clipGain.connect(master);
-          audioNodes.push({ source: asset.mediaAudioSource, gain: clipGain, persistent: true });
+          let entry = audioByAsset.get(asset);
+          if (!entry) {
+            asset.element.muted = false;
+            asset.element.volume = 1;
+            if (!asset.mediaAudioSource) asset.mediaAudioSource = audioContext.createMediaElementSource(asset.element);
+            const clipGain = audioContext.createGain();
+            asset.mediaAudioSource.connect(clipGain);
+            clipGain.connect(master);
+            entry = { gain: clipGain, scenes: [] };
+            audioByAsset.set(asset, entry);
+          }
+          entry.scenes.push(scene);
         } catch (error) {
           console.info("Clip audio could not be routed:", asset.file.name, error);
         }
+      }
+      for (const entry of audioByAsset.values()) {
+        const clipGain = entry.gain;
+        const clipLevel = uploadedBuffer ? 0.14 : (production.musicBuffer ? 0.2 : (production.voice ? 0.27 : 0.72));
+        clipGain.gain.setValueAtTime(0.0001, baseTime);
+        for (const scene of entry.scenes) {
+          const startAt = baseTime + scene.start;
+          const endAt = baseTime + scene.end;
+          clipGain.gain.setValueAtTime(0.0001, Math.max(baseTime, startAt - 0.03));
+          clipGain.gain.linearRampToValueAtTime(clipLevel, Math.min(endAt, startAt + 0.11));
+          clipGain.gain.setValueAtTime(clipLevel, Math.max(startAt + 0.12, endAt - 0.11));
+          clipGain.gain.linearRampToValueAtTime(0.0001, endAt);
+        }
+        audioNodes.push({ gain: clipGain, persistent: true });
       }
 
       if (plan.whooshes) {
@@ -681,21 +742,51 @@
       recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType }));
     });
 
-    function paintAsset(asset, scene, local, sceneIndex, alpha, slideOffset) {
-      const source = asset.element;
-      if (!asset.image && source.readyState < 2) return false;
-      const motion = asset.image ? (0.045 + 0.22 * local) : (0.035 + 0.055 * local);
-      const zoom = 1.035 + motion;
-      const direction = sceneIndex % 4;
-      const panX = direction === 0 ? -0.075 + local * 0.15 : direction === 1 ? 0.07 - local * 0.14 : Math.sin(local * Math.PI) * 0.11;
-      const panY = direction === 2 ? -0.08 + local * 0.16 : direction === 3 ? 0.07 - local * 0.14 : Math.cos(local * Math.PI) * 0.035;
+    function paintAsset(asset, scene, local, sceneIndex, alpha, slideOffset, usePoster = false) {
+      const source = usePoster && scene.endPoster ? scene.endPoster : asset.element;
+      if (!asset.image && (!source || (!scene.endPoster && source.readyState < 2))) return false;
+      const imageShot = asset.image;
+      const shotProgress = scene.shotCount > 1 ? scene.shotIndex / Math.max(1, scene.shotCount - 1) : 0;
+      const motion = imageShot ? (0.12 + 0.32 * local) : (0.035 + 0.09 * local);
+      const zoom = imageShot
+        ? 1.08 + motion + (scene.shotIndex % 2) * 0.06
+        : 1.04 + motion;
+      const direction = (scene.shotIndex + sceneIndex) % 4;
+      const panX = direction === 0 ? -0.16 + local * 0.32 : direction === 1 ? 0.15 - local * 0.3 : Math.sin(local * Math.PI) * 0.2;
+      const panY = direction === 2 ? -0.15 + local * 0.3 : direction === 3 ? 0.14 - local * 0.28 : Math.cos(local * Math.PI) * 0.07;
+      let focus = asset.subject;
+      if (imageShot && scene.shotCount > 1) {
+        const baseX = asset.subject && Number.isFinite(asset.subject.x) ? asset.subject.x : 0.5;
+        const baseY = asset.subject && Number.isFinite(asset.subject.y) ? asset.subject.y : 0.5;
+        const offsets = [[0,0],[-0.13,0.04],[0.13,-0.04],[0,0.13],[-0.08,-0.12],[0.08,0.12]];
+        const offset = offsets[scene.shotIndex % offsets.length];
+        focus = { x: clamp(baseX + offset[0], 0.12, 0.88), y: clamp(baseY + offset[1], 0.12, 0.88) };
+      }
       ctx.save();
       ctx.globalAlpha = alpha;
       if (slideOffset) ctx.translate(width * slideOffset, 0);
       ctx.filter = plan.look === "mono" ? "grayscale(1)" : plan.look === "warm" ? "sepia(.12) saturate(1.15)" : "none";
-      const result = drawCover(ctx, source, width, height, zoom, panX, panY, asset.subject);
+      const result = drawCover(ctx, source, width, height, zoom, panX, panY, focus);
       ctx.restore();
       return result;
+    }
+
+    function captureEndFrame(scene) {
+      if (!scene || scene.asset.image) return;
+      const video = scene.asset.element;
+      if (!video || video.readyState < 2 || !video.videoWidth) return;
+      try {
+        const poster = document.createElement("canvas");
+        const maxWidth = 360;
+        const scale = Math.min(1, maxWidth / video.videoWidth);
+        poster.width = Math.max(1, Math.round(video.videoWidth * scale));
+        poster.height = Math.max(1, Math.round(video.videoHeight * scale));
+        const posterContext = poster.getContext("2d");
+        if (posterContext) {
+          posterContext.drawImage(video, 0, 0, poster.width, poster.height);
+          scene.endPoster = poster;
+        }
+      } catch (_) {}
     }
 
     const started = performance.now();
@@ -714,14 +805,21 @@
       const local = clamp((t - scene.start) / scene.duration, 0, 1);
 
       if (index !== activeIndex) {
-        if (activeIndex >= 0 && !timeline[activeIndex].asset.image) timeline[activeIndex].asset.element.pause();
+        if (activeIndex >= 0) {
+          const previousScene = timeline[activeIndex];
+          if (!previousScene.asset.image) {
+            captureEndFrame(previousScene);
+            previousScene.asset.element.pause();
+          }
+        }
         activeIndex = index;
         if (!scene.asset.image) {
           const video = scene.asset.element;
           video.muted = false;
           video.pause();
-          try { video.currentTime = 0; } catch (_) {}
-          video.playbackRate = clamp(scene.asset.duration / scene.duration, 0.5, 2.5);
+          try { video.currentTime = scene.sourceStart || 0; } catch (_) {}
+          const sourceLength = Math.max(0.5, (scene.sourceEnd || scene.asset.duration) - (scene.sourceStart || 0));
+          video.playbackRate = clamp(sourceLength / scene.duration, 0.5, 2.5);
           video.play().catch(() => {});
         }
       }
@@ -733,7 +831,7 @@
       const inTransition = index > 0 && t - scene.start < transitionLength;
       if (inTransition) {
         const previous = timeline[index - 1];
-        paintAsset(previous.asset, previous, 1, index - 1, 1 - transitionProgress, 0);
+        paintAsset(previous.asset, previous, 1, index - 1, 1 - transitionProgress, 0, true);
         if (plan.transition === "slide") {
           drew = paintAsset(scene.asset, scene, local, index, transitionProgress, 1 - transitionProgress);
         } else {
@@ -793,7 +891,7 @@
     if (audioContext) await audioContext.resume();
     const first = timeline[0];
     if (!first.asset.image) {
-      first.asset.element.currentTime = 0;
+      first.asset.element.currentTime = first.sourceStart || 0;
       await first.asset.element.play().catch(() => {});
     }
     animationId = requestAnimationFrame(draw);
