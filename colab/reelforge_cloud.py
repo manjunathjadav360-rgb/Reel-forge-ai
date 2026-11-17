@@ -80,6 +80,8 @@ def _fallback_plan(prompt, duration):
         "voiceover": voice if re.search(r"story|travel|journey|romantic|emotional|motiv|explainer|voice|narrat|कहानी|सफ़र|यात्रा|प्यार", clean, re.I) else "",
         "mood": "romantic" if re.search(r"love|romantic|emotional|memory|प्यार|याद", clean, re.I) else "energetic" if re.search(r"car|sport|fast|energetic|bike|गाड़ी", clean, re.I) else "cinematic",
         "music_prompt": "original cinematic instrumental score, evolving warm synth pads, piano, soft percussion, no vocals",
+        "transition": "crossfade",
+        "look": "cinematic",
         "visual_prompts": [
             clean + ", cinematic wide establishing shot, beautiful composition, natural motion",
             clean + ", close-up detail shot, cinematic lighting, controlled camera movement",
@@ -88,11 +90,103 @@ def _fallback_plan(prompt, duration):
         ][:max(3, min(4, math.ceil(duration / 10)))]
     }
 
-def _creative_plan(prompt, filenames, duration):
+def _describe_media(raw_files):
+    inventory = []
+    previews = []
+    for index, path in enumerate(raw_files):
+        ext = Path(path).suffix.lower()
+        is_image = ext in (".jpg", ".jpeg", ".png", ".webp")
+        duration = 0.0
+        preview = None
+        if is_image:
+            try:
+                preview = Image.open(path).convert("RGB")
+            except Exception as exc:
+                print("Image preview skipped:", Path(path).name, str(exc)[:160])
+        else:
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", path],
+                capture_output=True, text=True, check=False
+            )
+            try:
+                duration = max(0.0, float((probe.stdout or "0").strip()))
+            except Exception:
+                duration = 0.0
+            preview_path = OUTPUT_DIR / f"inventory_{index:02d}.jpg"
+            seek = max(0.1, duration * 0.42) if duration else 0.1
+            frame = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                 "-ss", str(seek), "-i", path, "-frames:v", "1",
+                 "-vf", "scale=384:384:force_original_aspect_ratio=decrease",
+                 str(preview_path)],
+                capture_output=True, check=False
+            )
+            if frame.returncode == 0 and preview_path.exists():
+                try:
+                    preview = Image.open(preview_path).convert("RGB")
+                except Exception:
+                    preview = None
+        item = {
+            "file": Path(path).name,
+            "kind": "photo" if is_image else "video",
+            "duration_seconds": round(duration, 2) if duration else None,
+            "visual_description": "Visual analysis unavailable; use the uploaded media as supplied."
+        }
+        inventory.append(item)
+        if preview is not None:
+            previews.append((index, preview))
+
+    if not previews:
+        return inventory
+
+    processor = model = None
+    try:
+        from transformers import BlipProcessor, BlipForConditionalGeneration
+        _progress("Looking through your footage so the editor can choose relevant shots…")
+        processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+        model = BlipForConditionalGeneration.from_pretrained(
+            "Salesforce/blip-image-captioning-base",
+            torch_dtype=torch.float16
+        ).to("cuda")
+        model.eval()
+        for index, preview in previews:
+            try:
+                inputs = processor(images=preview, return_tensors="pt")
+                for key, value in list(inputs.items()):
+                    if torch.is_floating_point(value):
+                        inputs[key] = value.to(device="cuda", dtype=torch.float16)
+                    else:
+                        inputs[key] = value.to("cuda")
+                with torch.inference_mode():
+                    tokens = model.generate(**inputs, max_new_tokens=34, num_beams=3)
+                caption = processor.decode(tokens[0], skip_special_tokens=True).strip()
+                if caption:
+                    inventory[index]["visual_description"] = caption[:240]
+            except Exception as exc:
+                print("A media preview could not be described:", inventory[index]["file"], str(exc)[:160])
+        del model, processor
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception as exc:
+        print("Visual analysis model fallback:", str(exc)[:260])
+        if model is not None:
+            del model
+        if processor is not None:
+            del processor
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    return inventory
+
+
+def _creative_plan(prompt, media_inventory, duration):
     hindi = _is_hindi(prompt)
+    fallback = _fallback_plan(prompt, duration)
     try:
         from transformers import AutoTokenizer, AutoModelForCausalLM
-        _progress("Planning the edit with ReelForge's local creative director…")
+        _progress("Planning the edit from your prompt and footage analysis…")
         dtype = torch.float16 if torch.cuda.is_available() else torch.float32
         tokenizer = AutoTokenizer.from_pretrained(DIRECTOR_MODEL)
         model = AutoModelForCausalLM.from_pretrained(
@@ -106,16 +200,21 @@ def _creative_plan(prompt, filenames, duration):
             "You are ReelForge, a professional short-form video director. Return JSON only. "
             "Keys: title, mood (cinematic|romantic|travel|energetic|motivational|calm), "
             "voiceover (one to three original sentences or empty), music_prompt, "
-            "visual_prompts (three to six detailed self-contained text-to-video prompts). "
-            "If there are no uploaded clips, design a complete visual story with a clear opening, middle and ending. "
-            "Do not invent facts about uploaded footage. Use the prompt's language. "
-            "For Hindi, write Hindi in Devanagari. Keep all visuals original and coherent."
+            "transition (crossfade|flash|zoom|cut), look (cinematic|warm|cool|vintage|clean), "
+            "visual_prompts (three to twelve detailed self-contained text-to-video prompts). "
+            "Build a clear opening, development and memorable ending. Match the uploaded media descriptions. "
+            "Do not invent events or facts about user footage. If a recurring person or object appears, "
+            "repeat its visual description in every AI scene prompt to improve continuity. "
+            "Prompts must describe visible movement, camera movement, lighting and composition, not just a still image. "
+            "Use the prompt's language. For Hindi, write Hindi voiceover in Devanagari. "
+            "Use original fictional content and do not imitate named copyrighted characters or living creators."
         )
         user = (
             f"EDIT BRIEF: {prompt}\nOUTPUT LENGTH: {duration} seconds\n"
-            f"UPLOADED FILES: {', '.join(filenames)}\n"
-            "Make a strong beginning, visual development and a memorable ending. "
-            "Visual prompts should be self-contained and suitable for 2-second vertical video clips."
+            f"UPLOADED MEDIA INVENTORY: {json.dumps(media_inventory, ensure_ascii=False)}\n"
+            "Create a deliberate short-form edit. Use AI-generated B-roll only where it adds value, "
+            "and make each generated prompt a distinct moving shot. Keep the same character appearance "
+            "across related scenes. Provide an original voiceover only if it improves the brief."
         )
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         inputs = tokenizer.apply_chat_template(
@@ -124,25 +223,37 @@ def _creative_plan(prompt, filenames, duration):
         ).to(device)
         with torch.inference_mode():
             output = model.generate(
-                inputs, max_new_tokens=360, do_sample=True,
-                temperature=0.65, top_p=0.9, repetition_penalty=1.08
+                inputs, max_new_tokens=520, do_sample=True,
+                temperature=0.62, top_p=0.9, repetition_penalty=1.08
             )
         answer = tokenizer.decode(output[0][inputs.shape[-1]:], skip_special_tokens=True)
         match = re.search(r"\{.*\}", answer, re.S)
         plan = json.loads(match.group(0)) if match else {}
-        fallback = _fallback_plan(prompt, duration)
+        moods = {"cinematic", "romantic", "travel", "energetic", "motivational", "calm"}
+        transitions = {"crossfade", "flash", "zoom", "cut"}
+        looks = {"cinematic", "warm", "cool", "vintage", "clean"}
         result = {
             "title": str(plan.get("title") or fallback["title"])[:70],
             "mood": str(plan.get("mood") or fallback["mood"]).lower(),
             "voiceover": str(plan.get("voiceover") or "")[:600],
             "music_prompt": str(plan.get("music_prompt") or fallback["music_prompt"])[:400],
+            "transition": str(plan.get("transition") or "crossfade").lower(),
+            "look": str(plan.get("look") or "cinematic").lower(),
             "visual_prompts": plan.get("visual_prompts") if isinstance(plan.get("visual_prompts"), list) else fallback["visual_prompts"]
         }
-        result["visual_prompts"] = [str(x)[:450] for x in result["visual_prompts"][:6]]
+        if result["mood"] not in moods:
+            result["mood"] = fallback["mood"]
+        if result["transition"] not in transitions:
+            result["transition"] = "crossfade"
+        if result["look"] not in looks:
+            result["look"] = "cinematic"
+        result["visual_prompts"] = [str(x)[:650] for x in result["visual_prompts"][:12] if str(x).strip()]
         if not result["visual_prompts"]:
             result["visual_prompts"] = fallback["visual_prompts"]
         if hindi and result["voiceover"] and not _is_hindi(result["voiceover"]):
             result["voiceover"] = fallback["voiceover"]
+        if re.search(r"\b(no|without|skip|don't|do not)\s+(voice[- ]?over|narration|spoken voice)\b", prompt, re.I):
+            result["voiceover"] = ""
         del model, tokenizer, inputs, output
         gc.collect()
         if torch.cuda.is_available():
@@ -153,7 +264,7 @@ def _creative_plan(prompt, filenames, duration):
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        return _fallback_plan(prompt, duration)
+        return fallback
 
 def _scene_prompts(plan, count):
     base = [str(x) for x in plan.get("visual_prompts", []) if str(x).strip()]
@@ -173,7 +284,74 @@ def _scene_prompts(plan, count):
         prompts.append(source + ", " + variation)
     return prompts[:count]
 
-def _generate_broll(plan, count):
+def _generate_wan_scenes(plan, count):
+    from diffusers import WanPipeline
+    import imageio.v2 as imageio
+
+    prompts = _scene_prompts(plan, count)
+    paths = []
+    pipe = None
+    try:
+        _progress("Loading Wan 2.1 open video model. First use downloads the model weights…")
+        pipe = WanPipeline.from_pretrained(
+            "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+            torch_dtype=torch.float16,
+            use_safetensors=True
+        )
+        pipe.enable_model_cpu_offload()
+        if hasattr(pipe, "enable_vae_slicing"):
+            pipe.enable_vae_slicing()
+        if hasattr(pipe, "enable_vae_tiling"):
+            pipe.enable_vae_tiling()
+        pipe.set_progress_bar_config(disable=True)
+
+        for index, prompt in enumerate(prompts):
+            _progress(f"Generating real AI video scene {index + 1} of {len(prompts)} with Wan 2.1…")
+            with torch.inference_mode():
+                result = pipe(
+                    prompt=prompt,
+                    negative_prompt=(
+                        "still image, frozen frame, slideshow, watermark, subtitles, text, "
+                        "flicker, jitter, deformed faces, malformed hands, low quality, blurry"
+                    ),
+                    height=832,
+                    width=480,
+                    num_frames=49,
+                    num_inference_steps=18,
+                    guidance_scale=5.0,
+                    generator=torch.Generator(device="cuda").manual_seed(2600 + index)
+                )
+            frames = result.frames[0]
+            out = OUTPUT_DIR / f"wan_scene_{index + 1:02d}.mp4"
+            writer = imageio.get_writer(
+                str(out), fps=16, codec="libx264",
+                pixelformat="yuv420p", macro_block_size=1
+            )
+            try:
+                for frame in frames:
+                    if hasattr(frame, "convert"):
+                        frame = np.asarray(frame.convert("RGB"))
+                    else:
+                        frame = np.asarray(frame)
+                    writer.append_data(frame.astype(np.uint8))
+            finally:
+                writer.close()
+            if not out.exists() or out.stat().st_size < 50_000:
+                raise RuntimeError(f"Wan did not produce a valid moving video for scene {index + 1}.")
+            paths.append(str(out))
+            del result, frames
+            gc.collect()
+            torch.cuda.empty_cache()
+    finally:
+        if pipe is not None:
+            del pipe
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    return paths
+
+
+def _generate_animatediff_scenes(plan, count):
     from diffusers import AnimateDiffPipeline, MotionAdapter, DDIMScheduler
     import imageio.v2 as imageio
 
@@ -182,7 +360,7 @@ def _generate_broll(plan, count):
     pipe = None
     paths = []
     try:
-        _progress("Loading the open video-generation models (first run downloads them)…")
+        _progress("Wan is unavailable on this runtime. Trying the lighter AnimateDiff video model…")
         adapter = MotionAdapter.from_pretrained(
             MOTION_MODEL, torch_dtype=torch.float16, variant="fp16"
         )
@@ -206,40 +384,30 @@ def _generate_broll(plan, count):
         pipe.set_progress_bar_config(disable=True)
 
         for index, prompt in enumerate(prompts):
-            _progress(f"Generating original AI video scene {index + 1} of {len(prompts)}…")
+            _progress(f"Generating animated AI scene {index + 1} of {len(prompts)}…")
             with torch.inference_mode():
                 result = pipe(
                     prompt=prompt,
-                    negative_prompt="low quality, flicker, distorted faces, text, watermark, artifacts, bad anatomy",
-                    num_frames=32,
+                    negative_prompt="still image, frozen frame, watermark, text, flicker, distortion, low quality",
+                    num_frames=24,
                     height=512,
                     width=384,
                     num_inference_steps=14,
-                    guidance_scale=6.8,
-                    generator=torch.Generator("cuda").manual_seed(2400 + index)
+                    guidance_scale=6.5,
+                    generator=torch.Generator("cuda").manual_seed(3600 + index)
                 )
             frames = [np.asarray(frame.convert("RGB")) for frame in result.frames[0]]
-            out = OUTPUT_DIR / f"ai_scene_{index + 1}.mp4"
-            imageio.mimsave(str(out), frames, fps=8, codec="libx264", quality=8, macro_block_size=None)
+            out = OUTPUT_DIR / f"animatediff_scene_{index + 1:02d}.mp4"
+            imageio.mimsave(
+                str(out), frames, fps=8, codec="libx264",
+                quality=8, macro_block_size=1
+            )
+            if not out.exists() or out.stat().st_size < 30_000:
+                raise RuntimeError(f"AnimateDiff did not produce a valid moving video for scene {index + 1}.")
             paths.append(str(out))
             del result, frames
             gc.collect()
             torch.cuda.empty_cache()
-    except Exception as exc:
-        print("Animated scene generation fallback:", str(exc)[:400])
-        if pipe is not None:
-            del pipe
-            pipe = None
-        if adapter is not None:
-            del adapter
-            adapter = None
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        for item in paths:
-            try: os.remove(item)
-            except Exception: pass
-        paths = _generate_stills(plan, count)
     finally:
         if pipe is not None:
             del pipe
@@ -249,6 +417,36 @@ def _generate_broll(plan, count):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     return paths
+
+
+def _generate_broll(plan, count):
+    try:
+        return _generate_wan_scenes(plan, count)
+    except Exception as wan_error:
+        print("Wan 2.1 video generation failed:", str(wan_error)[:500])
+        for item in OUTPUT_DIR.glob("wan_scene_*.mp4"):
+            try:
+                item.unlink()
+            except Exception:
+                pass
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    try:
+        return _generate_animatediff_scenes(plan, count)
+    except Exception as fallback_error:
+        print("AnimateDiff video fallback failed:", str(fallback_error)[:500])
+        for pattern in ("wan_scene_*.mp4", "animatediff_scene_*.mp4"):
+            for item in OUTPUT_DIR.glob(pattern):
+                try:
+                    item.unlink()
+                except Exception:
+                    pass
+        raise RuntimeError(
+            "ReelForge could not generate moving AI scenes on this runtime. "
+            "No still-image slideshow was substituted. Try reconnecting with an available GPU. "
+            f"Wan: {str(wan_error)[:180]} | AnimateDiff: {str(fallback_error)[:180]}"
+        ) from fallback_error
 
 def _generate_stills(plan, count):
     from diffusers import StableDiffusionPipeline
@@ -422,6 +620,7 @@ def _generate_voice(plan):
     text = str(plan.get("voiceover") or "").strip()
     if not text:
         return None
+    out = OUTPUT_DIR / "voiceover.wav"
     try:
         from kokoro import KPipeline
         hindi = _is_hindi(text)
@@ -434,18 +633,29 @@ def _generate_voice(plan):
             if hasattr(audio, "cpu"):
                 audio = audio.cpu().numpy()
             parts.append(np.asarray(audio, dtype=np.float32).reshape(-1))
-        if not parts:
-            return None
-        samples = np.concatenate(parts)
-        out = OUTPUT_DIR / "voiceover.wav"
-        sf.write(str(out), samples, 24000)
-        del pipeline, parts, samples
-        gc.collect()
-        return str(out)
+        if parts:
+            samples = np.concatenate(parts)
+            sf.write(str(out), samples, 24000)
+            del pipeline, parts, samples
+            gc.collect()
+            if out.exists() and out.stat().st_size > 2_000:
+                return str(out)
     except Exception as exc:
-        print("Voice-over fallback:", str(exc)[:300])
+        print("Kokoro voice fallback:", str(exc)[:300])
         gc.collect()
-        return None
+
+    try:
+        _progress("Using the built-in offline speech voice as a backup…")
+        voice = "hi" if _is_hindi(text) else "en-us"
+        subprocess.run(
+            ["espeak-ng", "-v", voice, "-s", "148", "-w", str(out), text],
+            capture_output=True, text=True, check=True, timeout=120
+        )
+        if out.exists() and out.stat().st_size > 2_000:
+            return str(out)
+    except Exception as exc:
+        print("Offline speech fallback unavailable:", str(exc)[:240])
+    return None
 
 def _vertical(clip):
     from moviepy.editor import vfx
@@ -502,7 +712,7 @@ def _whisper_captions(video_rows):
     captions = []
     try:
         from faster_whisper import WhisperModel
-        _progress("Listening to the original clips for spoken dialogue…")
+        _progress("Listening to source clips for speech and building timed captions…")
         model = WhisperModel("base", device="cpu", compute_type="int8")
         transcript_cache = {}
         for path, source_start, source_end, timeline_start in video_rows:
@@ -510,23 +720,77 @@ def _whisper_captions(video_rows):
                 segments, _ = model.transcribe(path, word_timestamps=True, vad_filter=True)
                 transcript_cache[path] = list(segments)
             for segment in transcript_cache[path]:
-                text = str(segment.text or "").strip()
-                if not text:
-                    continue
-                seg_start = max(float(segment.start), source_start)
-                seg_end = min(float(segment.end), source_end)
-                if seg_end <= seg_start:
-                    continue
-                mapped_start = timeline_start + (seg_start - source_start)
-                mapped_end = timeline_start + (seg_end - source_start)
-                captions.append((text, mapped_start, mapped_end))
+                words = []
+                for word in (getattr(segment, "words", None) or []):
+                    text = str(getattr(word, "word", "") or "").strip()
+                    start = getattr(word, "start", None)
+                    end = getattr(word, "end", None)
+                    if not text or start is None or end is None:
+                        continue
+                    start = max(float(start), source_start)
+                    end = min(float(end), source_end)
+                    if end > start:
+                        words.append((text, start, end))
+                if words:
+                    for offset in range(0, len(words), 4):
+                        group = words[offset:offset + 4]
+                        text = " ".join(item[0] for item in group).strip()
+                        start = timeline_start + (group[0][1] - source_start)
+                        end = timeline_start + (group[-1][2] - source_start)
+                        if text and end > start:
+                            captions.append((text, start, end))
+                else:
+                    text = str(segment.text or "").strip()
+                    if not text:
+                        continue
+                    start = max(float(segment.start), source_start)
+                    end = min(float(segment.end), source_end)
+                    if end > start:
+                        captions.append((
+                            text,
+                            timeline_start + (start - source_start),
+                            timeline_start + (end - source_start)
+                        ))
         del model
         gc.collect()
     except Exception as exc:
         print("Automatic speech captions fallback:", str(exc)[:300])
     return captions
 
-def _mix_audio(final, raw_audio, music_path, voice_path):
+
+def _generate_sfx(duration, scene_count, mood):
+    sr = 24000
+    length = max(1, int(sr * duration))
+    stereo = np.zeros((length, 2), dtype=np.float32)
+    rng = np.random.default_rng(731 + int(scene_count))
+    events = max(0, int(scene_count) - 1)
+    for index in range(events):
+        center = duration * (index + 1) / (events + 1)
+        start = max(0, int((center - 0.28) * sr))
+        count = min(int(0.62 * sr), length - start)
+        if count <= 0:
+            continue
+        t = np.arange(count, dtype=np.float32) / sr
+        progress = np.clip(t / max(0.001, count / sr), 0, 1)
+        envelope = np.sin(np.pi * progress) ** 1.35
+        noise = rng.normal(0, 1, count).astype(np.float32)
+        high = np.concatenate(([0.0], np.diff(noise)))
+        sweep = np.sin(2 * np.pi * (180 * t - 95 * t * t))
+        impact = np.sin(2 * np.pi * (95 - 36 * progress) * t) * np.exp(-t * 20)
+        effect = (high * 0.045 + sweep * 0.075 + impact * 0.12) * envelope
+        pan = -0.32 if index % 2 else 0.32
+        left_gain = math.sqrt((1.0 - pan) * 0.5)
+        right_gain = math.sqrt((1.0 + pan) * 0.5)
+        stereo[start:start + count, 0] += effect * left_gain
+        stereo[start:start + count, 1] += effect * right_gain
+    peak = float(np.max(np.abs(stereo))) if stereo.size else 0.0
+    if peak > 0.92:
+        stereo *= 0.92 / peak
+    out = OUTPUT_DIR / "original_transition_sfx.wav"
+    sf.write(str(out), stereo, sr)
+    return str(out)
+
+def _mix_audio(final, raw_audio, music_path, voice_path, sfx_path=None):
     from moviepy.editor import AudioFileClip, CompositeAudioClip
     from moviepy.audio.fx.all import audio_loop
     tracks = []
@@ -534,18 +798,21 @@ def _mix_audio(final, raw_audio, music_path, voice_path):
         tracks.append(track)
     music = AudioFileClip(music_path)
     music = audio_loop(music, duration=final.duration).set_duration(final.duration)
-    music = music.volumex(0.22 if voice_path else 0.48)
+    music = music.volumex(0.20 if voice_path else 0.46)
     tracks.append(music)
     if voice_path:
         voice = AudioFileClip(voice_path).set_start(0).volumex(1.0)
         if voice.duration > final.duration:
             voice = voice.subclip(0, final.duration)
         tracks.append(voice)
+    if sfx_path:
+        effects = AudioFileClip(sfx_path).set_duration(final.duration).volumex(0.48)
+        tracks.append(effects)
     composite = CompositeAudioClip(tracks).set_duration(final.duration)
     return final.set_audio(composite), tracks
 
 def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
-    from moviepy.editor import VideoFileClip, ImageClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
+    from moviepy.editor import VideoFileClip, ImageClip, ColorClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
     from moviepy.video.fx.all import fadein, fadeout, colorx, loop, mirror_x
     raw_entries, source_objects = [], []
     for path in raw_paths:
@@ -569,7 +836,8 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
                     continue
                 segment = source.subclip(start, end)
                 clip = _vertical(segment.without_audio())
-                clip = clip.fx(colorx, 1.06).fx(fadein, 0.22).fx(fadeout, 0.22)
+                grade = {"warm": 1.09, "cool": 1.02, "vintage": 0.96, "clean": 1.04}.get(plan.get("look", "cinematic"), 1.07)
+                clip = clip.fx(colorx, grade).fx(fadein, 0.22).fx(fadeout, 0.22)
                 audio = segment.audio.volumex(0.2) if segment.audio is not None else None
                 raw_entries.append({
                     "clip": clip,
@@ -587,7 +855,8 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
             generated = VideoFileClip(path, audio=False)
             source_objects.append(generated)
             clip = _vertical(generated)
-        clip = clip.fx(colorx, 1.08).fx(fadein, 0.18).fx(fadeout, 0.18)
+        grade = {"warm": 1.09, "cool": 1.02, "vintage": 0.96, "clean": 1.04}.get(plan.get("look", "cinematic"), 1.07)
+        clip = clip.fx(colorx, grade).fx(fadein, 0.18).fx(fadeout, 0.18)
         ai_entries.append({"clip": clip, "audio": None, "source": None})
 
     sequence = []
@@ -639,15 +908,19 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
         extension_index += 1
 
     sequence = sequence[:max(3, min(max_sequence, len(sequence)))]
-    crossfade = 0.28
+    transition = plan.get("transition", "crossfade")
+    crossfade = 0.36 if transition == "crossfade" else 0.18 if transition == "zoom" else 0.12 if transition == "flash" else 0.0
     clips = []
+    cut_points = []
     raw_audio = []
     video_rows = []
     cursor = 0.0
     for index, entry in enumerate(sequence):
         clip = entry["clip"]
         if index > 0:
-            clip = clip.crossfadein(crossfade)
+            cut_points.append(cursor)
+            if crossfade > 0:
+                clip = clip.crossfadein(crossfade)
         clips.append(clip)
         if entry["audio"] is not None:
             raw_audio.append(entry["audio"].set_start(cursor))
@@ -663,7 +936,8 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
         final = final.fx(loop, duration=duration)
 
     # Original audio from videos, user-selected music or MusicGen, and voice-over.
-    final, audio_tracks = _mix_audio(final, raw_audio, music_path, voice_path)
+    sfx_path = _generate_sfx(final.duration, len(sequence), plan.get("mood", "cinematic"))
+    final, audio_tracks = _mix_audio(final, raw_audio, music_path, voice_path, sfx_path)
 
     overlays = []
     title_text = str(plan.get("title") or "").strip()
@@ -687,6 +961,38 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
             continue
         img = _caption_image(text)
         overlays.append(ImageClip(img).set_start(start).set_duration(end-start).set_position(("center", 1000)))
+
+    # Subtle edge vignette and a restrained warm light leak give the edit a finished look.
+    yy, xx = np.mgrid[0:HEIGHT, 0:WIDTH]
+    nx = (xx - WIDTH / 2) / (WIDTH / 2)
+    ny = (yy - HEIGHT / 2) / (HEIGHT / 2)
+    radial = np.sqrt(nx * nx + ny * ny)
+    vignette = np.zeros((HEIGHT, WIDTH, 4), dtype=np.uint8)
+    vignette[:, :, 3] = (np.clip((radial - 0.42) / 0.95, 0, 0.24) * 255).astype(np.uint8)
+    overlays.append(ImageClip(vignette, transparent=True).set_duration(final.duration))
+
+    if plan.get("look") in ("cinematic", "warm", "vintage"):
+        glow = np.zeros((HEIGHT, WIDTH, 4), dtype=np.uint8)
+        glow_alpha = np.exp(-(((xx - WIDTH * 0.12) / (WIDTH * 0.55)) ** 2
+                              + ((yy - HEIGHT * 0.16) / (HEIGHT * 0.42)) ** 2)) * 34
+        glow[:, :, 0] = 255
+        glow[:, :, 1] = 148
+        glow[:, :, 2] = 76
+        glow[:, :, 3] = np.clip(glow_alpha, 0, 34).astype(np.uint8)
+        overlays.append(
+            ImageClip(glow, transparent=True)
+            .set_start(0)
+            .set_duration(min(2.8, final.duration))
+        )
+
+    if transition == "flash":
+        for cut in cut_points:
+            start = max(0.0, cut - 0.035)
+            if start < final.duration:
+                overlays.append(
+                    ColorClip(size=(WIDTH, HEIGHT), color=(255, 248, 236))
+                    .set_start(start).set_duration(0.08).set_opacity(0.28)
+                )
 
     if overlays:
         final = CompositeVideoClip([final] + overlays, size=(WIDTH, HEIGHT)).set_duration(final.duration)
@@ -751,16 +1057,25 @@ def _verify_final_mp4(path, expected_duration):
 
 def _run_pipeline(raw_files, audio_files, prompt, duration):
     if not torch.cuda.is_available():
-        raise RuntimeError("A free GPU is not attached. In Colab choose Runtime → Change runtime type → T4 GPU, then Run all again.")
+        raise RuntimeError("A free GPU is not attached. Reconnect with an available Colab GPU to generate AI video scenes.")
     if not raw_files and not str(prompt or "").strip():
         raise RuntimeError("Add an editing prompt. You can create a video without uploading any clips.")
     for file in OUTPUT_DIR.glob("*"):
         if file.is_file():
-            try: file.unlink()
-            except Exception: pass
-    plan = _creative_plan(prompt, [Path(p).name for p in raw_files], duration)
-    _progress("Generating original AI motion scenes…")
-    ai_count = min(12, max(8, math.ceil(duration / (4 if not raw_files else 12))))
+            try:
+                file.unlink()
+            except Exception:
+                pass
+
+    media_inventory = _describe_media(raw_files)
+    plan = _creative_plan(prompt, media_inventory, duration)
+    plan["source_inventory"] = media_inventory
+
+    _progress("Generating original moving AI scenes…")
+    ai_count = min(
+        12,
+        max(4, math.ceil(duration / (3.1 if not raw_files else 7.5)))
+    )
     ai_paths = _generate_broll(plan, ai_count)
     gc.collect()
     torch.cuda.empty_cache()
@@ -768,11 +1083,15 @@ def _run_pipeline(raw_files, audio_files, prompt, duration):
     voice_path = _generate_voice(plan)
     music_path = _generate_music(plan, duration, audio_files[0] if audio_files else None)
     gc.collect()
-    if torch.cuda.is_available(): torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     final_path = _assemble(raw_files, ai_paths, duration, music_path, voice_path, plan)
     _progress("Verifying the finished MP4, audio track and Instagram-compatible format…")
     plan["export"] = _verify_final_mp4(final_path, duration)
+    plan["generated_video_scenes"] = len(ai_paths)
+    plan["voiceover_added"] = bool(voice_path)
+    plan["original_transition_sfx_added"] = True
     return final_path, plan
 
 def _start_ui():
