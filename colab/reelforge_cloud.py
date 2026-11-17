@@ -423,6 +423,7 @@ def _generate_broll(plan, count):
     try:
         return _generate_wan_scenes(plan, count)
     except Exception as wan_error:
+        wan_message = str(wan_error)[:180]
         print("Wan 2.1 video generation failed:", str(wan_error)[:500])
         for item in OUTPUT_DIR.glob("wan_scene_*.mp4"):
             try:
@@ -445,7 +446,7 @@ def _generate_broll(plan, count):
         raise RuntimeError(
             "ReelForge could not generate moving AI scenes on this runtime. "
             "No still-image slideshow was substituted. Try reconnecting with an available GPU. "
-            f"Wan: {str(wan_error)[:180]} | AnimateDiff: {str(fallback_error)[:180]}"
+            f"Wan: {wan_message} | AnimateDiff: {str(fallback_error)[:180]}"
         ) from fallback_error
 
 def _generate_stills(plan, count):
