@@ -8,6 +8,7 @@ import shutil
 import random
 import tempfile
 import traceback
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -711,6 +712,43 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
     gc.collect()
     return str(out)
 
+def _verify_final_mp4(path, expected_duration):
+    command = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration:stream=codec_type,codec_name,width,height,pix_fmt",
+        "-of", "json", str(path)
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=True, timeout=60)
+    report = json.loads(result.stdout or "{}")
+    streams = report.get("streams", [])
+    video = next((item for item in streams if item.get("codec_type") == "video"), None)
+    audio = next((item for item in streams if item.get("codec_type") == "audio"), None)
+    if not video:
+        raise RuntimeError("The export has no readable video stream.")
+    if not audio:
+        raise RuntimeError("The export has no audio stream. The audio mix did not complete.")
+    duration = float(report.get("format", {}).get("duration") or 0)
+    if duration < expected_duration * 0.92:
+        raise RuntimeError(f"The MP4 is incomplete ({duration:.1f}s of {expected_duration}s).")
+    if int(video.get("width") or 0) != WIDTH or int(video.get("height") or 0) != HEIGHT:
+        raise RuntimeError("The export did not keep the required vertical 720×1280 frame.")
+    codec = str(video.get("codec_name") or "")
+    pixel_format = str(video.get("pix_fmt") or "")
+    if codec != "h264" or pixel_format != "yuv420p":
+        raise RuntimeError(f"Instagram compatibility check failed: video={codec}, pixel format={pixel_format}.")
+    size = Path(path).stat().st_size
+    if size < 100_000:
+        raise RuntimeError("The rendered MP4 is unexpectedly small and may be incomplete.")
+    return {
+        "duration": round(duration, 2),
+        "width": int(video["width"]),
+        "height": int(video["height"]),
+        "video_codec": codec,
+        "pixel_format": pixel_format,
+        "audio_codec": str(audio.get("codec_name") or "unknown"),
+        "size_mb": round(size / (1024 * 1024), 2)
+    }
+
 def _run_pipeline(raw_files, audio_files, prompt, duration):
     if not torch.cuda.is_available():
         raise RuntimeError("A free GPU is not attached. In Colab choose Runtime → Change runtime type → T4 GPU, then Run all again.")
@@ -733,6 +771,8 @@ def _run_pipeline(raw_files, audio_files, prompt, duration):
     if torch.cuda.is_available(): torch.cuda.empty_cache()
 
     final_path = _assemble(raw_files, ai_paths, duration, music_path, voice_path, plan)
+    _progress("Verifying the finished MP4, audio track and Instagram-compatible format…")
+    plan["export"] = _verify_final_mp4(final_path, duration)
     return final_path, plan
 
 def _start_ui():
@@ -796,7 +836,13 @@ def _start_ui():
                 _progress(f"Finished in {elapsed//60}m {elapsed%60}s · MP4 ready")
                 display(Video(path, embed=True, width=300))
                 display(HTML(f"<div style='color:#d8c7ad;font:13px system-ui;margin:8px 0'>Title: {plan.get('title','ReelForge edit')} · Mood: {plan.get('mood','cinematic')}</div>"))
-                display(HTML("<div style='font:13px system-ui;color:#a7d8b8'>Your video is exported without a ReelForge watermark.</div>"))
+                export_info = plan.get("export", {})
+                display(HTML(
+                    f"<div style='font:12px/1.6 system-ui;color:#a7d8b8'>"
+                    f"Verified MP4 · {export_info.get('width')}×{export_info.get('height')} · "
+                    f"{export_info.get('duration')}s · H.264 + {export_info.get('audio_codec')} · "
+                    f"{export_info.get('size_mb')} MB · no added watermark</div>"
+                ))
                 colab_files.download(path)
             except Exception as exc:
                 _progress(f"Could not finish this render: {str(exc)[:600]}")
