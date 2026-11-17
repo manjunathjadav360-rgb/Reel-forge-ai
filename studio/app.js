@@ -879,6 +879,19 @@
         production.notes.push("Voice-over skipped: " + error.message);
       }
     }
+    if (!state.audioFile && $("autoMusic").checked) {
+      try {
+        setStatus("Composing an original instrumental score…", 24);
+        const score = await window.ReelForgeAI.generateMusic(duration, plan.mood);
+        production.musicBuffer = score.buffer;
+        production.musicBpm = score.bpm;
+        plan.beatTimes = [];
+        for (let time = 0; time < duration; time += score.beatSeconds) plan.beatTimes.push(time);
+      } catch (error) {
+        production.notes.push("Generated music skipped: " + error.message);
+      }
+    }
+
     if (!production.voice && $("autoCaptions").checked) {
       const videoAssets = orderedAssets.filter(asset => !asset.image);
       if (videoAssets.length) {
@@ -916,18 +929,7 @@
         production.notes.push("No video audio was available to transcribe. Add video clips containing speech for automatic captions.");
       }
     }
-    if (!state.audioFile && $("autoMusic").checked) {
-      try {
-        setStatus("Composing an original instrumental score…", 24);
-        const score = await window.ReelForgeAI.generateMusic(duration, plan.mood);
-        production.musicBuffer = score.buffer;
-        production.musicBpm = score.bpm;
-        plan.beatTimes = [];
-        for (let time = 0; time < duration; time += score.beatSeconds) plan.beatTimes.push(time);
-      } catch (error) {
-        production.notes.push("Generated music skipped: " + error.message);
-      }
-    }
+
     return production;
   }
   async function generate() {
