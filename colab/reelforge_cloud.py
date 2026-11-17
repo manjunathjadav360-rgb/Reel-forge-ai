@@ -76,8 +76,9 @@ def _fallback_plan(prompt, duration):
         "visual_prompts": [
             clean + ", cinematic wide establishing shot, beautiful composition, natural motion",
             clean + ", close-up detail shot, cinematic lighting, controlled camera movement",
+            clean + ", dynamic middle scene, strong composition, subtle environmental movement",
             clean + ", emotional final scene, atmospheric light, elegant visual storytelling"
-        ][:max(1, min(3, math.ceil(duration / 20)))]
+        ][:max(3, min(4, math.ceil(duration / 10)))]
     }
 
 def _creative_plan(prompt, filenames, duration):
@@ -98,9 +99,10 @@ def _creative_plan(prompt, filenames, duration):
             "You are ReelForge, a professional short-form video director. Return JSON only. "
             "Keys: title, mood (cinematic|romantic|travel|energetic|motivational|calm), "
             "voiceover (one to three original sentences or empty), music_prompt, "
-            "visual_prompts (two or three detailed text-to-video prompts for short B-roll scenes). "
-            "Do not invent facts about the user's actual footage. Use the prompt's language. "
-            "For Hindi, write Hindi in Devanagari. Keep visuals original and coherent."
+            "visual_prompts (three to six detailed self-contained text-to-video prompts). "
+            "If there are no uploaded clips, design a complete visual story with a clear opening, middle and ending. "
+            "Do not invent facts about uploaded footage. Use the prompt's language. "
+            "For Hindi, write Hindi in Devanagari. Keep all visuals original and coherent."
         )
         user = (
             f"EDIT BRIEF: {prompt}\nOUTPUT LENGTH: {duration} seconds\n"
@@ -129,7 +131,7 @@ def _creative_plan(prompt, filenames, duration):
             "music_prompt": str(plan.get("music_prompt") or fallback["music_prompt"])[:400],
             "visual_prompts": plan.get("visual_prompts") if isinstance(plan.get("visual_prompts"), list) else fallback["visual_prompts"]
         }
-        result["visual_prompts"] = [str(x)[:450] for x in result["visual_prompts"][:3]]
+        result["visual_prompts"] = [str(x)[:450] for x in result["visual_prompts"][:6]]
         if not result["visual_prompts"]:
             result["visual_prompts"] = fallback["visual_prompts"]
         if hindi and result["voiceover"] and not _is_hindi(result["voiceover"]):
@@ -187,7 +189,7 @@ def _generate_broll(plan, count):
                     num_frames=16,
                     height=512,
                     width=384,
-                    num_inference_steps=12,
+                    num_inference_steps=14,
                     guidance_scale=6.8,
                     generator=torch.Generator("cuda").manual_seed(2400 + index)
                 )
@@ -251,35 +253,10 @@ def _generate_stills(plan, count):
 def _generate_music(plan, duration, audio_path=None):
     if audio_path:
         return audio_path
-    try:
-        from transformers import AutoProcessor, MusicgenForConditionalGeneration
-        _progress("Composing an original background score with MusicGen…")
-        processor = AutoProcessor.from_pretrained("facebook/musicgen-small")
-        model = MusicgenForConditionalGeneration.from_pretrained(
-            "facebook/musicgen-small",
-            torch_dtype=torch.float16,
-            low_cpu_mem_usage=True
-        ).to("cuda")
-        prompt = plan.get("music_prompt") or "cinematic instrumental, melodic, no vocals"
-        inputs = processor(text=[prompt], padding=True, return_tensors="pt").to("cuda")
-        token_count = min(1200, max(450, int(duration * 40)))
-        with torch.inference_mode():
-            audio_values = model.generate(**inputs, max_new_tokens=token_count)
-        sample_rate = int(model.config.audio_encoder.sampling_rate)
-        values = audio_values[0].detach().float().cpu().numpy()
-        if values.ndim == 2:
-            values = values.T
-        out = OUTPUT_DIR / "original_music.wav"
-        sf.write(str(out), values, sample_rate)
-        del model, processor, inputs, audio_values, values
-        gc.collect()
-        torch.cuda.empty_cache()
-        return str(out)
-    except Exception as exc:
-        print("MusicGen fallback:", str(exc)[:300])
-        gc.collect()
-        if torch.cuda.is_available(): torch.cuda.empty_cache()
-        return _procedural_music(duration, plan.get("mood", "cinematic"))
+    # No third-party generative music model is used here. The soundtrack is
+    # composed locally from original synthesized instruments, so this path
+    # does not inherit MusicGen's CC-BY-NC model restriction.
+    return _procedural_music(duration, plan.get("mood", "cinematic"))
 
 def _procedural_music(duration, mood):
     sr = 24000
@@ -574,15 +551,15 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
 def _run_pipeline(raw_files, audio_files, prompt, duration):
     if not torch.cuda.is_available():
         raise RuntimeError("A free GPU is not attached. In Colab choose Runtime → Change runtime type → T4 GPU, then Run all again.")
-    if not raw_files:
-        raise RuntimeError("Upload at least one photo or video.")
+    if not raw_files and not str(prompt or "").strip():
+        raise RuntimeError("Add an editing prompt. You can create a video without uploading any clips.")
     for file in OUTPUT_DIR.glob("*"):
         if file.is_file():
             try: file.unlink()
             except Exception: pass
     plan = _creative_plan(prompt, [Path(p).name for p in raw_files], duration)
     _progress("Generating original AI motion scenes…")
-    ai_count = min(3, max(1, math.ceil(duration / 20)))
+    ai_count = min(6, max(3, math.ceil(duration / 10)))
     ai_paths = _generate_broll(plan, ai_count)
     gc.collect()
     torch.cuda.empty_cache()
@@ -608,7 +585,7 @@ def _start_ui():
     upload_box = widgets.FileUpload(
         accept=".mp4,.mov,.m4v,.webm,.avi,.jpg,.jpeg,.png,.webp",
         multiple=True,
-        description="Add raw clips"
+        description="Add raw clips (optional)"
     )
     audio_box = widgets.FileUpload(
         accept=".mp3,.wav,.m4a,.aac,.ogg",
@@ -633,8 +610,8 @@ def _start_ui():
             try:
                 raw_items = _upload_items(upload_box)
                 audio_items = _upload_items(audio_box)
-                if not raw_items:
-                    raise RuntimeError("Choose at least one video or photo first.")
+                if not raw_items and not prompt_box.value.strip():
+                    raise RuntimeError("Write an editing prompt. You can create a video without uploading any clips.")
                 raw_paths = []
                 for index, (name, content) in enumerate(raw_items):
                     out = UPLOAD_DIR / f"{index:02d}_{_safe_filename(name)}"
@@ -665,7 +642,7 @@ def _start_ui():
     run_button.on_click(on_run)
     display(title)
     display(prompt_box)
-    display(widgets.HTML("<b style='color:#d8c7ad'>1. Upload your raw photos/videos</b>"))
+    display(widgets.HTML("<b style='color:#d8c7ad'>1. Add raw photos/videos (optional — prompt-only works too)</b>"))
     display(upload_box)
     display(widgets.HTML("<b style='color:#d8c7ad;margin-top:8px'>2. Add your own audio (optional)</b>"))
     display(audio_box)
