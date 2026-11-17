@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111318">
+  <meta name="description" content="A private, browser-based reel editor. Your media stays on your device.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <title>ReelForge Studio</title>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="ReelForge Studio home"><span class="brand-mark">R</span><span>REELFORGE <small>STUDIO</small></span></a>
+      <span class="private-chip"><i></i> LOCAL EDITING</span>
+    </header>
+
+    <section class="intro">
+      <p class="eyebrow">YOUR PERSONAL EDITOR</p>
+      <h1>Drop your clips.<br><em>Describe the edit.</em></h1>
+      <p class="intro-copy">One prompt in. A finished vertical edit out. Your files stay in this browser.</p>
+    </section>
+
+    <section class="panel upload-panel">
+      <div class="panel-heading"><div><span class="step">01</span><h2>Your footage</h2></div><span class="muted">Photos + videos</span></div>
+      <label class="dropzone" for="mediaFiles" id="dropzone">
+        <span class="upload-symbol">＋</span>
+        <strong>Add raw clips</strong>
+        <span>Choose multiple videos or photos from your phone</span>
+        <small>MP4, MOV, WEBM, JPG, PNG · Up to 12 files</small>
+      </label>
+      <input id="mediaFiles" type="file" accept="video/*,image/*" multiple hidden>
+      <div id="assetList" class="asset-list" aria-live="polite"><p class="empty-state">Your selected files will appear here.</p></div>
+      <div class="audio-row">
+        <div class="audio-copy"><span class="audio-symbol">♫</span><div><strong>Specific audio (optional)</strong><small>Upload a song or sound file you have permission to use.</small></div></div>
+        <label class="audio-pick" for="audioFile">Choose audio</label>
+        <input id="audioFile" type="file" accept="audio/*" hidden>
+      </div>
+      <div id="audioName" class="audio-name">No audio selected</div>
+    </section>
+
+    <section class="panel prompt-panel">
+      <div class="panel-heading"><div><span class="step">02</span><h2>Tell your editor</h2></div><span class="muted">One prompt</span></div>
+      <label class="field-label" for="editPrompt">Describe the finished reel</label>
+      <textarea id="editPrompt" rows="4" maxlength="900" placeholder="Example: Make a 30-second cinematic car reel. Use quick cuts synced to my music, smooth fades, warm colour grading and a clean title. Keep it premium, not over-edited."></textarea>
+      <div class="prompt-examples">
+        <button type="button" class="example" data-prompt="Make a cinematic 30-second travel reel. Use smooth transitions, gentle zooms on photos, warm colours and cuts synced to my music.">Cinematic travel</button>
+        <button type="button" class="example" data-prompt="Make a 15-second fast-paced car reel. Use energetic cuts synced to the beat, punchy contrast and subtle motion. No unnecessary text.">Car edit</button>
+        <button type="button" class="example" data-prompt="Make a 30-second emotional memory reel. Use slower pacing, soft fades, warm colours and a simple elegant title.">Emotional</button>
+      </div>
+      <div class="settings-grid">
+        <label><span>Length</span><select id="duration"><option value="15">15 seconds</option><option value="30" selected>30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option></select></label>
+        <label><span>Quality</span><select id="quality"><option value="720" selected>720p · smoother on phone</option><option value="1080">1080p · heavier render</option></select></label>
+      </div>
+      <div id="plan" class="plan-box" hidden>
+        <div class="plan-title"><span class="plan-dot"></span> EDIT PLAN</div>
+        <p id="planText"></p>
+        <div id="planTags" class="plan-tags"></div>
+      </div>
+      <button id="generateBtn" class="generate-btn" type="button" disabled><span>✦</span> Create my edit</button>
+      <p class="small-note">No timeline editing. The first build handles clip order, vertical framing, simple transitions, optional music and prompt-based titles.</p>
+    </section>
+
+    <section id="renderPanel" class="panel render-panel" hidden>
+      <div class="panel-heading"><div><span class="step">03</span><h2>Your edit</h2></div><span id="renderState" class="muted">Preparing</span></div>
+      <div class="progress-track"><span id="progressBar"></span></div>
+      <p id="statusText" class="status-text" aria-live="polite">Preparing your footage…</p>
+      <div id="outputWrap" hidden>
+        <video id="outputVideo" controls playsinline></video>
+        <div class="output-meta"><span id="outputInfo">Vertical export</span><span class="no-watermark">✓ No watermark</span></div>
+        <div class="output-actions">
+          <a id="downloadBtn" class="download-btn" href="#" download>Download video</a>
+          <button id="shareBtn" class="share-btn" type="button">Share</button>
+        </div>
+        <p id="formatNote" class="small-note"></p>
+      </div>
+    </section>
+
+    <section class="privacy-note">
+      <span class="privacy-icon">⌑</span>
+      <div><strong>Your media stays on your phone</strong><p>Files are processed in your browser and are not uploaded to our server. Nothing is stored in a cloud account.</p></div>
+    </section>
+
+    <footer>REELFORGE STUDIO <span>Personal build · v0.1</span></footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
