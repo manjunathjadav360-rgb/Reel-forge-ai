@@ -90,12 +90,20 @@
     if (audio.duration > 120) throw new Error("Automatic captions are limited to 2 minutes per source file on this phone-first version.");
     if (audio.samples.length < 8000) return { text: "", chunks: [], duration: audio.duration };
     const model = await makeASR(onProgress);
-    sayProgress(onProgress, "Listening for spoken words…", 32);
-    const result = await model(audio.samples, {
-      return_timestamps: "word",
-      chunk_length_s: 20,
-      stride_length_s: 3
-    });
+    let result;
+    try {
+      sayProgress(onProgress, "Listening for spoken words…", 32);
+      result = await model(audio.samples, {
+        return_timestamps: "word",
+        chunk_length_s: 20,
+        stride_length_s: 3
+      });
+    } finally {
+      if (model && typeof model.dispose === "function") {
+        try { await model.dispose(); } catch (_) {}
+      }
+      asrPromise = null;
+    }
     const chunks = (result && result.chunks ? result.chunks : []).map(item => ({
       text: String(item.text || "").trim(),
       start: Array.isArray(item.timestamp) ? Number(item.timestamp[0]) : 0,
