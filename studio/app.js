@@ -189,46 +189,55 @@
     return { text: "Every frame holds a moment. Every moment leaves something behind.", language: "en" };
   }
 
-  function captionsFromTranscript(transcript) {
+  function captionsFromTranscript(transcript, offset = 0, playbackRate = 1) {
     const chunks = transcript && transcript.chunks ? transcript.chunks : [];
     const output = [];
     let group = [];
+    const timeOf = value => offset + (Number(value) || 0) / Math.max(0.25, playbackRate);
     for (const chunk of chunks) {
       const tokens = String(chunk.text || "").trim().split(/\s+/).filter(Boolean);
       for (const token of tokens) {
-        if (!group.length) group.push({ word: token, start: chunk.start, end: chunk.end });
-        else group.push({ word: token, start: Math.max(group[0].start, chunk.start), end: chunk.end });
-        if (group.length >= 5 || /[.!?।]$/.test(token)) {
-          output.push({ text: group.map(item => item.word).join(" "), start: group[0].start, end: Math.max(group[0].start + 0.35, group[group.length - 1].end) });
+        const start = timeOf(chunk.start);
+        const end = timeOf(chunk.end);
+        if (!group.length) group.push({ word: token, start, end });
+        else group.push({ word: token, start: Math.max(group[0].start, start), end });
+        if (group.length >= 4 || /[.!?।]$/.test(token)) {
+          const words = group.map(item => item.word);
+          output.push({ text: words.join(" "), words, start: group[0].start, end: Math.max(group[0].start + 0.35, group[group.length - 1].end) });
           group = [];
         }
       }
     }
-    if (group.length) output.push({ text: group.map(item => item.word).join(" "), start: group[0].start, end: Math.max(group[0].start + 0.5, group[group.length - 1].end) });
+    if (group.length) {
+      const words = group.map(item => item.word);
+      output.push({ text: words.join(" "), words, start: group[0].start, end: Math.max(group[0].start + 0.5, group[group.length - 1].end) });
+    }
     if (output.length) return output;
     const text = transcript && transcript.text ? transcript.text.trim() : "";
     if (!text) return [];
     const words = text.split(/\s+/);
-    const duration = Math.max(3, transcript.duration || 12);
-    const per = Math.ceil(words.length / Math.max(1, Math.ceil(duration / 2.5)));
+    const sourceDuration = Math.max(3, transcript.duration || 12) / Math.max(0.25, playbackRate);
+    const per = Math.ceil(words.length / Math.max(1, Math.ceil(sourceDuration / 2.2)));
     for (let i = 0; i < words.length; i += per) {
-      const start = duration * i / words.length;
-      const end = duration * Math.min(words.length, i + per) / words.length;
-      output.push({ text: words.slice(i, i + per).join(" "), start, end });
+      const groupWords = words.slice(i, i + per);
+      const start = offset + sourceDuration * i / words.length;
+      const end = offset + sourceDuration * Math.min(words.length, i + per) / words.length;
+      output.push({ text: groupWords.join(" "), words: groupWords, start, end });
     }
     return output;
   }
 
-  function captionsFromScript(script, duration) {
+  function captionsFromScript(script, speechDuration, offset = 0) {
     const words = script.trim().split(/\s+/).filter(Boolean);
     const groups = [];
-    for (let i = 0; i < words.length; i += 5) groups.push(words.slice(i, i + 5));
+    for (let i = 0; i < words.length; i += 4) groups.push(words.slice(i, i + 4));
     const total = words.length || 1;
-    let cursor = 0;
+    const usableDuration = Math.max(0.7, speechDuration || 2);
+    let cursor = offset;
     return groups.map(group => {
       const start = cursor;
-      cursor += duration * group.length / total;
-      return { text: group.join(" "), start, end: cursor };
+      cursor += usableDuration * group.length / total;
+      return { text: group.join(" "), words: group, start, end: cursor };
     });
   }
 
@@ -678,39 +687,56 @@
     const duration = Number($("duration").value);
     const production = { voice: null, captions: [], musicBuffer: null, notes: [] };
     const narration = narrationFor(plan);
-
     if (narration) {
       try {
-        if (!window.ReelForgeAI) throw new Error("The local AI engine did not load. Refresh the page and try again.");
+        if (!window.ReelForgeAI) throw new Error("The local AI engine did not load. Refresh and retry.");
         production.voice = await window.ReelForgeAI.synthesize(
-          narration.text,
-          narration.language,
-          $("voiceGender").value,
+          narration.text, narration.language, $("voiceGender").value,
           (message, percent) => setStatus(message, percent)
         );
-        if ($("autoCaptions").checked) production.captions = captionsFromScript(narration.text, duration);
+        if ($("autoCaptions").checked) {
+          const spokenSeconds = production.voice.samples.length / production.voice.sampleRate;
+          production.captions = captionsFromScript(narration.text, spokenSeconds, 0.12);
+        }
       } catch (error) {
         production.notes.push("Voice-over skipped: " + error.message);
-        if ($("autoCaptions").checked) production.captions = captionsFromScript(narration.text, duration);
       }
     }
-
     if (!production.voice && $("autoCaptions").checked) {
-      const sourceFile = state.audioFile || (state.assets.find(asset => !asset.image) || {}).file;
-      if (sourceFile) {
+      const videoAssets = state.assets.filter(asset => !asset.image);
+      if (videoAssets.length) {
         try {
           if (!window.ReelForgeAI) throw new Error("The local AI engine did not load.");
-          const transcript = await window.ReelForgeAI.transcribe(sourceFile, (message, percent) => setStatus(message, percent));
-          production.captions = captionsFromTranscript(transcript);
-          if (!production.captions.length) production.notes.push("No clear speech was found for automatic captions.");
+          setStatus("Finding spoken dialogue in your source clips…", 12);
+          const beats = plan.beatSync && state.audioFile ? await detectBeats(state.audioFile) : [];
+          const boundaries = createBoundaries(duration, state.assets.length, beats, plan.beatSync);
+          for (let index = 0; index < state.assets.length; index++) {
+            const asset = state.assets[index];
+            if (asset.image) continue;
+            const sceneStart = boundaries[index];
+            const sceneDuration = boundaries[index + 1] - sceneStart;
+            const speed = clamp(asset.duration / sceneDuration, 0.5, 2.5);
+            try {
+              const transcript = await window.ReelForgeAI.transcribe(asset.file,
+                (message, percent) => setStatus("Clip " + (index + 1) + ": " + message, Math.min(43, 12 + percent * 0.45))
+              );
+              const timed = captionsFromTranscript(transcript, sceneStart, speed)
+                .map(item => ({ ...item, end: Math.min(boundaries[index + 1], item.end) }))
+                .filter(item => item.end > item.start);
+              production.captions.push(...timed);
+            } catch (clipError) {
+              production.notes.push("Captions skipped for " + asset.file.name + ": " + clipError.message);
+            }
+          }
+          production.captions.sort((a, b) => a.start - b.start);
+          if (!production.captions.length) production.notes.push("No clear speech was detected in your video clips. Your uploaded music is not transcribed as lyrics.");
         } catch (error) {
           production.notes.push("Automatic captions skipped: " + error.message);
         }
       } else {
-        production.notes.push("No audio track was available to transcribe. Add an audio file or use video clips with speech for automatic captions.");
+        production.notes.push("No video audio was available to transcribe. Add video clips containing speech for automatic captions.");
       }
     }
-
     if (!state.audioFile && $("autoMusic").checked) {
       try {
         setStatus("Composing an original instrumental score…", 39);
@@ -721,7 +747,6 @@
     }
     return production;
   }
-
   async function generate() {
     if (!state.assets.length || state.rendering) return;
     clearOutput();
