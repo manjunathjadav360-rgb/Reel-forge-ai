@@ -261,9 +261,73 @@
     return buffer;
   }
 
+  let detectorPromise = null;
+  async function makeDetector(onProgress) {
+    if (detectorPromise) return detectorPromise;
+    detectorPromise = (async () => {
+      sayProgress(onProgress, "Loading the local smart-framing model…", 9);
+      const { pipeline, env } = await getTransformers();
+      env.allowRemoteModels = true;
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
+      const useGPU = !!navigator.gpu;
+      const progress_callback = event => {
+        if (event && event.status === "progress" && Number.isFinite(event.progress)) {
+          sayProgress(onProgress, "Downloading smart-framing model… " + Math.round(event.progress) + "%", 9 + event.progress * 0.2);
+        }
+      };
+      try {
+        return await pipeline("object-detection", "Xenova/yolos-tiny", {
+          dtype: "q8", device: useGPU ? "webgpu" : "wasm", progress_callback
+        });
+      } catch (error) {
+        if (!useGPU) throw error;
+        console.warn("Smart-framing WebGPU fallback:", error);
+        return await pipeline("object-detection", "Xenova/yolos-tiny", {
+          dtype: "q8", device: "wasm", progress_callback
+        });
+      }
+    })().catch(error => {
+      detectorPromise = null;
+      throw error;
+    });
+    return detectorPromise;
+  }
+
+  async function analyzeVisual(imageInput, onProgress) {
+    if (!imageInput) return [];
+    const detector = await makeDetector(onProgress);
+    sayProgress(onProgress, "Finding the main subject in this scene…", 36);
+    const result = await detector(imageInput, { threshold: 0.28 });
+    return (Array.isArray(result) ? result : [])
+      .filter(item => item && item.box && Number.isFinite(item.score))
+      .map(item => ({
+        label: String(item.label || "object"),
+        score: Number(item.score),
+        box: {
+          xmin: Number(item.box.xmin), ymin: Number(item.box.ymin),
+          xmax: Number(item.box.xmax), ymax: Number(item.box.ymax)
+        }
+      }))
+      .filter(item => item.box.xmax > item.box.xmin && item.box.ymax > item.box.ymin)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8);
+  }
+
+  async function releaseVision() {
+    if (!detectorPromise) return;
+    try {
+      const detector = await detectorPromise;
+      if (detector && typeof detector.dispose === "function") await detector.dispose();
+    } catch (_) {}
+    detectorPromise = null;
+  }
+
   window.ReelForgeAI = {
     transcribe,
     synthesize,
-    generateMusic
+    generateMusic,
+    analyzeVisual,
+    releaseVision
   };
 })();
