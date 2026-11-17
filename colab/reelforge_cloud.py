@@ -260,25 +260,128 @@ def _generate_music(plan, duration, audio_path=None):
 
 def _procedural_music(duration, mood):
     sr = 24000
-    t = np.arange(int(sr * duration), dtype=np.float32) / sr
-    bpm = 118 if mood == "energetic" else 88 if mood == "romantic" else 100
+    length = max(1, int(sr * duration))
+    t = np.arange(length, dtype=np.float32) / sr
+    left = np.zeros(length, dtype=np.float32)
+    right = np.zeros(length, dtype=np.float32)
+
+    if mood == "energetic":
+        bpm, progressions, scale = 122, [[196.0,246.94,293.66],[146.83,185.0,220.0],[174.61,220.0,261.63],[164.81,207.65,246.94]], [0,3,5,7,10]
+    elif mood == "romantic":
+        bpm, progressions, scale = 88, [[220.0,261.63,329.63],[174.61,220.0,261.63],[261.63,329.63,392.0],[196.0,246.94,293.66]], [0,2,4,7,9]
+    elif mood == "travel":
+        bpm, progressions, scale = 108, [[261.63,329.63,392.0],[196.0,246.94,293.66],[220.0,261.63,329.63],[174.61,220.0,261.63]], [0,2,4,7,9]
+    else:
+        bpm, progressions, scale = 98, [[220.0,261.63,329.63],[174.61,220.0,261.63],[196.0,246.94,293.66],[146.83,185.0,220.0]], [0,2,4,7,9]
+
     beat = 60.0 / bpm
-    chords = [220.0, 174.61, 196.0, 146.83] if mood != "energetic" else [196.0, 146.83, 174.61, 164.81]
-    signal = np.zeros_like(t)
-    for bar, start in enumerate(np.arange(0, duration, beat * 4)):
-        root = chords[bar % len(chords)]
-        end = min(duration, start + beat * 4)
-        mask = (t >= start) & (t < end)
-        local = t[mask] - start
-        envelope = np.minimum(1.0, local / 0.5) * np.minimum(1.0, np.maximum(0.0, (end - start - local) / 0.5))
-        signal[mask] += 0.07 * envelope * (
-            np.sin(2*np.pi*root*local) +
-            0.55*np.sin(2*np.pi*root*1.25*local) +
-            0.4*np.sin(2*np.pi*root*1.5*local)
-        )
-    signal = np.tanh(signal * 2.8) * 0.7
-    out = OUTPUT_DIR / "original_music_fallback.wav"
-    sf.write(str(out), signal, sr)
+    bar = beat * 4
+    rng = np.random.default_rng(20261117)
+
+    def add_tone(start, seconds, frequency, amplitude, pan=0.0, kind="sine"):
+        start_i = max(0, int(start * sr))
+        end_i = min(length, int((start + seconds) * sr))
+        if end_i <= start_i:
+            return
+        local = np.arange(end_i - start_i, dtype=np.float32) / sr
+        attack = min(0.18, max(0.008, seconds * 0.12))
+        release = min(0.55, max(0.035, seconds * 0.28))
+        env = np.minimum(1.0, local / attack)
+        env *= np.minimum(1.0, np.maximum(0.0, (seconds - local) / release))
+        if kind == "pad":
+            wave = (np.sin(2*np.pi*frequency*local)
+                    + 0.42*np.sin(2*np.pi*frequency*2.005*local)
+                    + 0.2*np.sin(2*np.pi*frequency*0.5*local))
+        elif kind == "pluck":
+            decay = np.exp(-local * (5.5 if mood == "energetic" else 3.8))
+            wave = decay * (np.sin(2*np.pi*frequency*local)
+                    + 0.34*np.sin(2*np.pi*frequency*2.01*local)
+                    + 0.12*np.sin(2*np.pi*frequency*3.02*local))
+        elif kind == "bass":
+            wave = np.sin(2*np.pi*frequency*local) + 0.25*np.sin(2*np.pi*frequency*2*local)
+        else:
+            wave = np.sin(2*np.pi*frequency*local)
+        wave = (wave * env * amplitude).astype(np.float32)
+        l_gain = math.sqrt((1.0 - pan) * 0.5)
+        r_gain = math.sqrt((1.0 + pan) * 0.5)
+        left[start_i:end_i] += wave * l_gain
+        right[start_i:end_i] += wave * r_gain
+
+    def add_kick(start, amplitude):
+        start_i = int(start * sr)
+        end_i = min(length, start_i + int(0.23 * sr))
+        if end_i <= start_i:
+            return
+        local = np.arange(end_i - start_i, dtype=np.float32) / sr
+        freq = 105.0 * np.exp(-local * 17.0) + 38.0
+        phase = 2*np.pi*np.cumsum(freq) / sr
+        wave = np.sin(phase) * np.exp(-local * 17.0) * amplitude
+        left[start_i:end_i] += wave
+        right[start_i:end_i] += wave * 0.92
+
+    def add_noise_hit(start, amplitude, duration_s, highpass=False, pan=0.0):
+        start_i = int(start * sr)
+        end_i = min(length, start_i + int(duration_s * sr))
+        if end_i <= start_i:
+            return
+        n = end_i - start_i
+        noise = rng.normal(0, 1, n).astype(np.float32)
+        if highpass:
+            noise = np.concatenate([[0.0], np.diff(noise)])
+        env = np.exp(-np.linspace(0, 6.5, n, dtype=np.float32))
+        wave = noise * env * amplitude
+        l_gain = math.sqrt((1.0-pan)*0.5)
+        r_gain = math.sqrt((1.0+pan)*0.5)
+        left[start_i:end_i] += wave*l_gain
+        right[start_i:end_i] += wave*r_gain
+
+    bars = math.ceil(duration / bar)
+    for bar_index in range(bars):
+        start = bar_index * bar
+        chord = progressions[bar_index % len(progressions)]
+        build = bar_index / max(1, bars - 1)
+        for voice_index, note in enumerate(chord):
+            pan = (voice_index - 1) * 0.24
+            add_tone(start, bar*0.96, note, 0.027, pan, "pad")
+            add_tone(start+0.04, bar*0.82, note*2, 0.008, -pan, "sine")
+
+        root = chord[0] / 2
+        for beat_index in range(4):
+            at = start + beat_index*beat
+            add_tone(at, beat*0.82, root, 0.065 if mood != "energetic" else 0.085, -0.12, "bass")
+            if beat_index in (0,2):
+                add_kick(at, 0.18 if mood == "energetic" else 0.115)
+            if beat_index in (1,3):
+                add_noise_hit(at, 0.035 if mood == "energetic" else 0.022, 0.15, False, 0.08)
+            add_noise_hit(at+beat*0.5, 0.032 if mood == "energetic" else 0.018, 0.075, True, -0.18 if beat_index%2 else 0.18)
+
+        arp_steps = 8 if mood in ("energetic","travel") else 4
+        for step in range(arp_steps):
+            interval = bar / arp_steps
+            base = chord[step % len(chord)]
+            semitone = scale[(step + bar_index) % len(scale)]
+            note = base * (2.0 ** (semitone / 12.0))
+            add_tone(start+step*interval, 0.34 if mood=="energetic" else 0.48,
+                     note, 0.038 if mood=="energetic" else 0.025,
+                     -0.36 if step%2 else 0.36, "pluck")
+
+    # Gentle stereo delay/reverb and a clean master fade.
+    dry_l, dry_r = left.copy(), right.copy()
+    for delay, gain in ((int(.12*sr),.12),(int(.23*sr),.075),(int(.37*sr),.045)):
+        if delay < length:
+            left[delay:] += dry_r[:-delay] * gain
+            right[delay:] += dry_l[:-delay] * gain
+    fade = min(int(sr*1.2), length//2)
+    if fade:
+        ramp = np.linspace(0,1,fade,dtype=np.float32)
+        left[:fade] *= ramp; right[:fade] *= ramp
+        left[-fade:] *= ramp[::-1]; right[-fade:] *= ramp[::-1]
+    stereo = np.stack([left,right],axis=1)
+    peak = float(np.max(np.abs(stereo))) if stereo.size else 0.0
+    if peak > 0:
+        stereo = np.tanh(stereo / max(peak,0.85) * 1.4) * 0.72
+    out = OUTPUT_DIR / "original_music.wav"
+    sf.write(str(out), stereo.astype(np.float32), sr)
     return str(out)
 
 def _generate_voice(plan):
@@ -404,7 +507,7 @@ def _mix_audio(final, raw_audio, music_path, voice_path):
 
 def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
     from moviepy.editor import VideoFileClip, ImageClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
-    from moviepy.video.fx.all import fadein, fadeout, colorx
+    from moviepy.video.fx.all import fadein, fadeout, colorx, loop
     raw_entries, source_objects = [], []
     for path in raw_paths:
         ext = Path(path).suffix.lower()
@@ -460,25 +563,43 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
     if not sequence:
         raise RuntimeError("No usable media was created from your uploads.")
 
-    # Extend the edit by taking new moments from the source clips, not freezing a frame.
-    while sum(entry["clip"].duration for entry in sequence) < duration + 1 and raw_entries:
-        source_entry = raw_entries[len(sequence) % len(raw_entries)]
-        if source_entry["source"] and source_entry["source"][2] - source_entry["source"][1] > 1.0:
-            path, start, end = source_entry["source"]
-            base = next((v for v in source_objects if getattr(v, "filename", None) == path), None)
-            if base is not None:
-                next_start = max(0, min(base.duration - 2.0, end + 0.15))
-                next_end = min(base.duration, next_start + min(3.0, duration/10))
-                if next_end - next_start > 0.8:
-                    segment = base.subclip(next_start, next_end)
-                    extra = _vertical(segment.without_audio()).fx(colorx, 1.05).fx(fadein, 0.18).fx(fadeout, 0.18)
-                    raw_entries.append({"clip": extra, "audio": segment.audio.volumex(0.18) if segment.audio else None,
-                                        "source": (path, next_start, next_end)})
-                    sequence.append(raw_entries[-1])
-                    continue
-        sequence.append(source_entry)
+    # Extend the timeline with additional source moments or alternate AI shots.
+    extension_index = 0
+    max_sequence = min(42, max(6, math.ceil(duration / 1.35) + 4))
+    while sum(entry["clip"].duration for entry in sequence) < duration + 0.5 and len(sequence) < max_sequence:
+        if raw_entries:
+            source_entry = raw_entries[extension_index % len(raw_entries)]
+            if source_entry["source"] and source_entry["source"][2] - source_entry["source"][1] > 1.0:
+                path, start, end = source_entry["source"]
+                base = next((v for v in source_objects if getattr(v, "filename", None) == path), None)
+                if base is not None:
+                    next_start = max(0, min(base.duration - 1.8, end + 0.12))
+                    next_end = min(base.duration, next_start + min(3.2, duration/10))
+                    if next_end - next_start > 0.8:
+                        segment = base.subclip(next_start, next_end)
+                        extra = _vertical(segment.without_audio()).fx(colorx, 1.05).fx(fadein, 0.18).fx(fadeout, 0.18)
+                        raw_entries.append({
+                            "clip": extra,
+                            "audio": segment.audio.volumex(0.18) if segment.audio else None,
+                            "source": (path, next_start, next_end)
+                        })
+                        sequence.append(raw_entries[-1])
+                        extension_index += 1
+                        continue
+            sequence.append(source_entry)
+        elif ai_entries:
+            source_entry = ai_entries[extension_index % len(ai_entries)]
+            extra = source_entry["clip"].copy()
+            if extension_index % 2:
+                extra = extra.fx(vfx.mirror_x)
+            else:
+                extra = extra.fx(colorx, 1.04)
+            sequence.append({"clip": extra, "audio": None, "source": None})
+        else:
+            break
+        extension_index += 1
 
-    sequence = sequence[:max(3, min(18, len(sequence)))]
+    sequence = sequence[:max(3, min(max_sequence, len(sequence)))]
     crossfade = 0.28
     clips = []
     raw_audio = []
@@ -499,6 +620,8 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
     final = concatenate_videoclips(clips, method="compose", padding=-crossfade)
     if final.duration > duration:
         final = final.subclip(0, duration)
+    elif final.duration < duration:
+        final = final.fx(loop, duration=duration)
 
     # Original audio from videos, user-selected music or MusicGen, and voice-over.
     final, audio_tracks = _mix_audio(final, raw_audio, music_path, voice_path)
@@ -513,7 +636,8 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
         draw.text((68, 143), title_text[:42], font=font, fill=(255,248,236,255), stroke_width=2, stroke_fill=(0,0,0,170))
         overlays.append(ImageClip(np.asarray(title_img)).set_start(0).set_duration(min(4.5, final.duration)).set_position(("center","center")))
 
-    caption_rows = _script_captions(plan.get("voiceover",""), min(7.0, final.duration)) if voice_path else []
+    voice_duration = min(final.duration, float(sf.info(voice_path).duration)) if voice_path else 0.0
+    caption_rows = _script_captions(plan.get("voiceover",""), voice_duration) if voice_path else []
     if not caption_rows:
         caption_rows = _whisper_captions(video_rows)
     for text, start, end in caption_rows:
