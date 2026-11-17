@@ -148,11 +148,29 @@ def _creative_plan(prompt, filenames, duration):
             torch.cuda.empty_cache()
         return _fallback_plan(prompt, duration)
 
+def _scene_prompts(plan, count):
+    base = [str(x) for x in plan.get("visual_prompts", []) if str(x).strip()]
+    if not base:
+        base = _fallback_plan(plan.get("title", "cinematic reel"), 30)["visual_prompts"]
+    variations = [
+        "alternate wide establishing angle, gentle forward camera dolly",
+        "medium cinematic composition, subtle side tracking movement",
+        "intimate close-up detail, shallow depth of field and soft parallax",
+        "dramatic final angle, atmospheric light and graceful camera pullback",
+        "low-angle cinematic perspective, layered foreground and background"
+    ]
+    prompts = base[:count]
+    while len(prompts) < count:
+        source = base[len(prompts) % len(base)]
+        variation = variations[len(prompts) % len(variations)]
+        prompts.append(source + ", " + variation)
+    return prompts[:count]
+
 def _generate_broll(plan, count):
     from diffusers import AnimateDiffPipeline, MotionAdapter, DDIMScheduler
     import imageio.v2 as imageio
 
-    prompts = plan["visual_prompts"][:count]
+    prompts = _scene_prompts(plan, count)
     adapter = None
     pipe = None
     paths = []
@@ -186,7 +204,7 @@ def _generate_broll(plan, count):
                 result = pipe(
                     prompt=prompt,
                     negative_prompt="low quality, flicker, distorted faces, text, watermark, artifacts, bad anatomy",
-                    num_frames=16,
+                    num_frames=24,
                     height=512,
                     width=384,
                     num_inference_steps=14,
@@ -229,7 +247,7 @@ def _generate_stills(plan, count):
         pipe.enable_vae_slicing()
         pipe.enable_attention_slicing()
         pipe.enable_model_cpu_offload()
-        for index, prompt in enumerate(plan["visual_prompts"][:count]):
+        for index, prompt in enumerate(_scene_prompts(plan, count)):
             result = pipe(
                 prompt=prompt,
                 negative_prompt="low quality, watermark, text, deformed",
@@ -683,7 +701,7 @@ def _run_pipeline(raw_files, audio_files, prompt, duration):
             except Exception: pass
     plan = _creative_plan(prompt, [Path(p).name for p in raw_files], duration)
     _progress("Generating original AI motion scenes…")
-    ai_count = min(6, max(3, math.ceil(duration / 10)))
+    ai_count = min(6, max(4, math.ceil(duration / (8 if not raw_files else 18))))
     ai_paths = _generate_broll(plan, ai_count)
     gc.collect()
     torch.cuda.empty_cache()
