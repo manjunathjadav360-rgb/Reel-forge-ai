@@ -174,6 +174,7 @@
     if (!director) return;
     plan.director = director;
     plan.clipOrder = director.clipOrder;
+    plan.sceneOverlays = Array.isArray(director.sceneOverlays) ? director.sceneOverlays : [];
     if (director.mood) plan.mood = director.mood;
     if (director.musicMood) plan.mood = director.musicMood;
     if (director.look) plan.look = director.look;
@@ -349,6 +350,37 @@
     });
     ctx.restore();
   }
+  function drawSceneOverlay(ctx, width, height, label, progress, sceneIndex) {
+    const text = String(label || "").trim();
+    if (!text || progress > 0.58) return;
+    const fade = clamp(Math.min(progress / 0.09, (0.58 - progress) / 0.1, 1), 0, 1);
+    if (fade <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    const x = width * 0.065;
+    const y = height * 0.135;
+    const padX = width * 0.032;
+    const fontSize = Math.round(width * 0.035);
+    ctx.font = "750 " + fontSize + "px system-ui, sans-serif";
+    const textWidth = Math.min(width * 0.76, ctx.measureText(text).width);
+    const boxWidth = textWidth + padX * 2 + 7;
+    const boxHeight = fontSize * 2.2;
+    ctx.fillStyle = "rgba(7,10,16,.52)";
+    ctx.beginPath();
+    if (typeof ctx.roundRect === "function") ctx.roundRect(x, y, boxWidth, boxHeight, fontSize * 0.35);
+    else ctx.rect(x, y, boxWidth, boxHeight);
+    ctx.fill();
+    ctx.fillStyle = "#e9c79e";
+    ctx.fillRect(x + padX, y + boxHeight * 0.28, 3, boxHeight * 0.44);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fffaf2";
+    ctx.shadowColor = "rgba(0,0,0,.45)";
+    ctx.shadowBlur = 8;
+    ctx.fillText(text, x + padX + 10, y + boxHeight * 0.52, width * 0.74);
+    ctx.restore();
+  }
+
   function drawVfx(ctx, width, height, time, plan) {
     if (!plan.vfx) return;
     ctx.save();
@@ -549,6 +581,7 @@
     const orderedAssets = orderedAssetsForPlan(plan);
     const timeline = orderedAssets.map((asset, index) => ({
       asset,
+      overlay: Array.isArray(plan.sceneOverlays) ? (plan.sceneOverlays[state.assets.indexOf(asset)] || "") : "",
       start: boundaries[index],
       end: boundaries[index + 1],
       duration: boundaries[index + 1] - boundaries[index]
@@ -736,6 +769,7 @@
         }
       }
       drawVfx(ctx, width, height, t, plan);
+      drawSceneOverlay(ctx, width, height, scene.overlay, local, index);
       drawTitle(ctx, width, height, plan.title, t / duration);
       drawCaptions(ctx, width, height, production.captions, t);
 
