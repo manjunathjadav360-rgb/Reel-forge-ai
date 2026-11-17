@@ -226,6 +226,15 @@ def _generate_broll(plan, count):
             torch.cuda.empty_cache()
     except Exception as exc:
         print("Animated scene generation fallback:", str(exc)[:400])
+        if pipe is not None:
+            del pipe
+            pipe = None
+        if adapter is not None:
+            del adapter
+            adapter = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         for item in paths:
             try: os.remove(item)
             except Exception: pass
@@ -447,7 +456,9 @@ def _vertical(clip):
 def _caption_image(text):
     image = Image.new("RGBA", (WIDTH, 190), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    hindi_font = "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf"
+    default_font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_path = hindi_font if _is_hindi(text) and Path(hindi_font).exists() else default_font
     font = ImageFont.truetype(font_path, 34)
     words = str(text).split()
     lines, current = [], ""
@@ -492,9 +503,12 @@ def _whisper_captions(video_rows):
         from faster_whisper import WhisperModel
         _progress("Listening to the original clips for spoken dialogue…")
         model = WhisperModel("base", device="cpu", compute_type="int8")
+        transcript_cache = {}
         for path, source_start, source_end, timeline_start in video_rows:
-            segments, _ = model.transcribe(path, word_timestamps=True, vad_filter=True)
-            for segment in segments:
+            if path not in transcript_cache:
+                segments, _ = model.transcribe(path, word_timestamps=True, vad_filter=True)
+                transcript_cache[path] = list(segments)
+            for segment in transcript_cache[path]:
                 text = str(segment.text or "").strip()
                 if not text:
                     continue
@@ -655,7 +669,8 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
     if title_text:
         title_img = Image.new("RGBA", (WIDTH, HEIGHT), (0,0,0,0))
         draw = ImageDraw.Draw(title_img)
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 58)
+        title_font = "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf" if _is_hindi(title_text) and Path("/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf").exists() else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        font = ImageFont.truetype(title_font, 58)
         draw.rounded_rectangle((40, 110, WIDTH-40, 245), radius=24, fill=(4,7,12,145))
         draw.text((68, 143), title_text[:42], font=font, fill=(255,248,236,255), stroke_width=2, stroke_fill=(0,0,0,170))
         overlays.append(ImageClip(np.asarray(title_img)).set_start(0).set_duration(min(4.5, final.duration)).set_position(("center","center")))
