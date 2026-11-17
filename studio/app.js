@@ -530,24 +530,32 @@
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
 
     if (AudioCtx) {
-      audioContext = new AudioCtx();
+      audioContext = state.mixContext || new AudioCtx();
+      state.mixContext = audioContext;
+      await audioContext.resume();
       const destination = audioContext.createMediaStreamDestination();
       const master = audioContext.createGain();
       master.gain.value = 1;
       master.connect(destination);
 
+      let uploadedBuffer = null;
       if (state.audioFile) {
         setStatus("Preparing your uploaded audio…", 43);
         try {
-          const inputBuffer = await audioContext.decodeAudioData(await state.audioFile.arrayBuffer());
-          const volume = production.voice ? 0.42 : 0.82;
-          audioNodes.push(addAudioBuffer(audioContext, master, inputBuffer, { start: 0, end: duration, volume, loop: true }));
+          uploadedBuffer = await audioContext.decodeAudioData(await state.audioFile.arrayBuffer());
         } catch (error) {
           throw new Error("I could not read the audio file. Try an MP3, M4A or WAV file.");
         }
+      }
+
+      const baseTime = audioContext.currentTime + 0.35;
+      if (uploadedBuffer) {
+        audioNodes.push(addAudioBuffer(audioContext, master, uploadedBuffer, {
+          start: baseTime, end: baseTime + duration, volume: production.voice ? 0.38 : 0.76, loop: true
+        }));
       } else if (production.musicBuffer) {
         audioNodes.push(addAudioBuffer(audioContext, master, production.musicBuffer, {
-          start: 0, end: duration, volume: production.voice ? 0.34 : 0.58, loop: true
+          start: baseTime, end: baseTime + duration, volume: production.voice ? 0.34 : 0.57, loop: true
         }));
       }
 
@@ -555,37 +563,42 @@
         const voiceBuffer = audioContext.createBuffer(1, production.voice.samples.length, production.voice.sampleRate);
         voiceBuffer.copyToChannel(production.voice.samples, 0);
         audioNodes.push(addAudioBuffer(audioContext, master, voiceBuffer, {
-          start: 0, end: Math.min(duration, voiceBuffer.duration), volume: 0.96, loop: false
+          start: baseTime + 0.08, end: baseTime + Math.min(duration, voiceBuffer.duration + 0.12), volume: 0.98, loop: false
         }));
       }
 
-      if (!state.audioFile) {
-        for (let i = 0; i < timeline.length; i++) {
-          const scene = timeline[i];
-          if (scene.asset.image || scene.asset.file.size > 75 * 1024 * 1024) continue;
-          try {
-            const buffer = await audioContext.decodeAudioData(await scene.asset.file.arrayBuffer());
-            if (buffer.duration > 0.15) {
-              const speed = clamp(scene.asset.duration / scene.duration, 0.5, 2.5);
-              audioNodes.push(addAudioBuffer(audioContext, master, buffer, {
-                start: scene.start, end: scene.end, volume: production.musicBuffer ? 0.19 : 0.62,
-                loop: true, playbackRate: speed
-              }));
-            }
-          } catch (error) {
-            console.info("Source clip audio was skipped:", scene.asset.file.name);
-          }
+      for (const scene of timeline) {
+        const asset = scene.asset;
+        if (asset.image) continue;
+        try {
+          asset.element.muted = false;
+          asset.element.volume = 1;
+          if (!asset.mediaAudioSource) asset.mediaAudioSource = audioContext.createMediaElementSource(asset.element);
+          const clipGain = audioContext.createGain();
+          const startAt = baseTime + scene.start;
+          const endAt = baseTime + scene.end;
+          const clipLevel = uploadedBuffer ? 0.14 : (production.musicBuffer ? 0.2 : (production.voice ? 0.27 : 0.72));
+          clipGain.gain.setValueAtTime(0.0001, baseTime);
+          clipGain.gain.setValueAtTime(0.0001, startAt);
+          clipGain.gain.linearRampToValueAtTime(clipLevel, Math.min(endAt, startAt + 0.12));
+          clipGain.gain.setValueAtTime(clipLevel, Math.max(startAt + 0.13, endAt - 0.13));
+          clipGain.gain.linearRampToValueAtTime(0.0001, endAt);
+          asset.mediaAudioSource.connect(clipGain);
+          clipGain.connect(master);
+          audioNodes.push({ source: asset.mediaAudioSource, gain: clipGain, persistent: true });
+        } catch (error) {
+          console.info("Clip audio could not be routed:", asset.file.name, error);
         }
       }
 
       if (plan.whooshes) {
-        for (let i = 1; i < timeline.length; i++) scheduleWhoosh(audioContext, master, Math.max(0, timeline[i].start - 0.18));
+        for (let i = 1; i < timeline.length; i++) {
+          scheduleWhoosh(audioContext, master, Math.max(baseTime, baseTime + timeline[i].start - 0.18));
+        }
       }
 
       destination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
-      await audioContext.resume();
     }
-
     const chunks = [];
     const bitrate = size === 1080 ? 6500000 : 3800000;
     recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: bitrate, audioBitsPerSecond: 160000 });
@@ -633,6 +646,7 @@
         activeIndex = index;
         if (!scene.asset.image) {
           const video = scene.asset.element;
+          video.muted = false;
           video.pause();
           try { video.currentTime = 0; } catch (_) {}
           video.playbackRate = clamp(scene.asset.duration / scene.duration, 0.5, 2.5);
@@ -714,9 +728,9 @@
     timeline.forEach(s => { if (!s.asset.image) s.asset.element.pause(); });
     stream.getTracks().forEach(track => track.stop());
     audioNodes.forEach(node => {
-      try { node.source.stop(); } catch (_) {}
+      if (node.persistent) { try { node.gain.disconnect(); } catch (_) {} }
+      else { try { node.source.stop(); } catch (_) {} }
     });
-    if (audioContext) await audioContext.close().catch(() => {});
     state.recorder = null;
     return { blob, mimeType: recorder.mimeType || mimeType, duration, width, height };
   }
@@ -806,7 +820,7 @@
     }
   }
 
-  async function prepareProduction(plan) {
+  async function prepareProduction(plan, firstTranscriptPromise = null, firstTranscriptAsset = null) {
     const duration = Number($("duration").value);
     const production = { voice: null, captions: [], musicBuffer: null, notes: [...(state.smartNotes || [])] };
     const narration = narrationFor(plan);
@@ -840,9 +854,11 @@
             const sceneDuration = boundaries[index + 1] - sceneStart;
             const speed = clamp(asset.duration / sceneDuration, 0.5, 2.5);
             try {
-              const transcript = await window.ReelForgeAI.transcribe(asset.file,
-                (message, percent) => setStatus("Clip " + (index + 1) + ": " + message, Math.min(43, 12 + percent * 0.45))
-              );
+              const transcript = asset === firstTranscriptAsset && firstTranscriptPromise
+                ? await firstTranscriptPromise
+                : await window.ReelForgeAI.transcribe(asset.file,
+                    (message, percent) => setStatus("Clip " + (index + 1) + ": " + message, Math.min(43, 12 + percent * 0.45))
+                  );
               const timed = captionsFromTranscript(transcript, sceneStart, speed)
                 .map(item => ({ ...item, end: Math.min(boundaries[index + 1], item.end) }))
                 .filter(item => item.end > item.start);
@@ -883,10 +899,25 @@
     $("renderPanel").scrollIntoView({ behavior: "smooth", block: "start" });
     let production = { voice: null, captions: [], musicBuffer: null, notes: [] };
     try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        if (!state.mixContext || state.mixContext.state === "closed") state.mixContext = new AudioCtx();
+        state.mixContext.resume().catch(() => {});
+      }
       const plan = parsePrompt();
       if (state.assets.some(a => !a.ready)) throw new Error("One of your files has not finished loading. Please try again.");
+      let firstTranscriptPromise = null;
+      let firstTranscriptAsset = null;
+      if (!narrationFor(plan) && $("autoCaptions").checked && window.ReelForgeAI) {
+        firstTranscriptAsset = state.assets.find(asset => !asset.image) || null;
+        if (firstTranscriptAsset) {
+          firstTranscriptPromise = window.ReelForgeAI.transcribe(firstTranscriptAsset.file,
+            (message, percent) => setStatus("Preparing dialogue captions: " + message, Math.min(18, 4 + percent * 0.18))
+          );
+        }
+      }
       await analyzeAssets(plan);
-      production = await prepareProduction(plan);
+      production = await prepareProduction(plan, firstTranscriptPromise, firstTranscriptAsset);
       setStatus("Building animated scenes, transitions and effects…", 47);
       const result = await renderEdit(plan, production);
       state.outputBlob = result.blob;
