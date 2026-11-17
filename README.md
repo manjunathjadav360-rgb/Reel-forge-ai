@@ -42,3 +42,10 @@
 - Removing a domain immediately blocks that hostname. Disabling the assistant also blocks widget requests. A database trigger also prevents publishing unless at least one verified domain exists.
 - DNS TXT verification proves control of the hostname at verification time. Origin/CORS restrictions are browser embedding controls, not cryptographic caller authentication; non-browser clients can forge an Origin header. Keep rate limits and server-side abuse controls enabled.
 - Existing published widgets need at least one DNS-verified hostname before they will respond. Add and verify the domain before testing.
+
+
+## ReelForge One-Prompt AI Video Studio
+
+Open the [ReelForge Colab notebook](https://colab.research.google.com/github/manjunathjadav360-rgb/Reel-forge-ai/blob/main/colab/ReelForge_One_Prompt_Studio.ipynb) from a phone or computer. Select an available GPU runtime, choose **Runtime → Run all**, then use the upload and prompt interface to render a vertical MP4. Uploading footage is optional; a prompt alone can generate a storyboard and AI motion scenes.
+
+The notebook uses open models and does not require paid API keys. Free Colab GPU availability is variable and not guaranteed. The Stable Diffusion v1.5 model is distributed under CreativeML OpenRAIL-M; review its use restrictions before redistribution or offering this editor as a public service.
