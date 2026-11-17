@@ -29,6 +29,7 @@ jobs:
           node --check supabase/config.js
           node --check widget.js
           node --check widget-client.js
+          node --check studio/app.js
       - name: Verify AIKIVO app files and core screens
         run: |
           test -f index.html
@@ -41,6 +42,13 @@ jobs:
           test -f supabase/functions/aikivo-ai/index.ts
           test -f supabase/functions/aikivo-domain-verify/index.ts
           test -f supabase/widget-domains.sql
+          test -f studio/index.html
+          test -f studio/styles.css
+          test -f studio/app.js
+          test -f studio/manifest.webmanifest
+          test -f studio/sw.js
+          test -f studio/icon.svg
+          node -e 'JSON.parse(require("fs").readFileSync("studio/manifest.webmanifest","utf8")); console.log("ReelForge Studio manifest verified")'
           node -e 'const fs=require("fs");const h=fs.readFileSync("index.html","utf8");for(const id of ["page-overview","page-agents","page-knowledge","page-conversations","page-phone","page-settings","agentForm","knowledgeForm","chatForm","launchCenter","launchExecutiveSelect","launchPublishButton","launchEmbedCode","launchDomainInput","launchAddDomainButton","launchDomainList"])if(!h.includes(id))throw Error("Missing UI element: "+id);console.log("AIKIVO screens verified")'
 
   deploy:
