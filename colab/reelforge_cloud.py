@@ -56,8 +56,14 @@ def _safe_filename(name):
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
     return name[:100] or "media"
 
+STATUS_WIDGET = None
+
 def _progress(text):
-    status.value = f"<div style='padding:10px 12px;border-radius:10px;background:#202530;color:#f1e7d9;font:13px/1.5 system-ui'>{text}</div>"
+    global STATUS_WIDGET
+    if STATUS_WIDGET is not None:
+        safe = str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        STATUS_WIDGET.value = f"<div style='padding:10px 12px;border-radius:10px;background:#202530;color:#f1e7d9;font:13px/1.5 system-ui'>{safe}</div>"
+
 
 def _fallback_plan(prompt, duration):
     hindi = _is_hindi(prompt)
@@ -525,7 +531,7 @@ def _mix_audio(final, raw_audio, music_path, voice_path):
 
 def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
     from moviepy.editor import VideoFileClip, ImageClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
-    from moviepy.video.fx.all import fadein, fadeout, colorx, loop
+    from moviepy.video.fx.all import fadein, fadeout, colorx, loop, mirror_x
     raw_entries, source_objects = [], []
     for path in raw_paths:
         ext = Path(path).suffix.lower()
@@ -609,7 +615,7 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
             source_entry = ai_entries[extension_index % len(ai_entries)]
             extra = source_entry["clip"].copy()
             if extension_index % 2:
-                extra = extra.fx(vfx.mirror_x)
+                extra = extra.fx(mirror_x)
             else:
                 extra = extra.fx(colorx, 1.04)
             sequence.append({"clip": extra, "audio": None, "source": None})
@@ -701,7 +707,7 @@ def _run_pipeline(raw_files, audio_files, prompt, duration):
             except Exception: pass
     plan = _creative_plan(prompt, [Path(p).name for p in raw_files], duration)
     _progress("Generating original AI motion scenes…")
-    ai_count = min(6, max(4, math.ceil(duration / (8 if not raw_files else 18))))
+    ai_count = min(8, max(5, math.ceil(duration / (6 if not raw_files else 12))))
     ai_paths = _generate_broll(plan, ai_count)
     gc.collect()
     torch.cuda.empty_cache()
@@ -715,6 +721,7 @@ def _run_pipeline(raw_files, audio_files, prompt, duration):
     return final_path, plan
 
 def _start_ui():
+    global STATUS_WIDGET
     title = widgets.HTML(
         "<div style='font:800 25px system-ui;color:#e8c59b'>REELFORGE CLOUD STUDIO</div>"
         "<div style='font:13px system-ui;color:#9ca6b6;margin:4px 0 14px'>One prompt · your raw media · original AI scenes · watermark-free MP4</div>"
@@ -744,6 +751,7 @@ def _start_ui():
     status = widgets.HTML(
         "<div style='padding:10px;background:#202530;border-radius:10px;color:#f1e7d9'>Ready. Upload your media and write one prompt.</div>"
     )
+    STATUS_WIDGET = status
     output = widgets.Output()
 
     def on_run(_):
