@@ -118,7 +118,7 @@
   }
 
   function updateReady() {
-    generateBtn.disabled = state.assets.length === 0 || state.rendering;
+    generateBtn.disabled = (state.assets.length === 0 && !promptInput.value.trim()) || state.rendering;
   }
 
   function parsePrompt() {
@@ -146,7 +146,10 @@
     if (!state.audioFile && $("autoMusic").checked) words.push("Original generated music");
     if (!words.length) words.push("Balanced cuts", "Vertical crop", "Animated motion");
     const audioText = state.audioFile ? "Your uploaded audio will be mixed into the edit. " : ($("autoMusic").checked ? "An original instrumental score will be created. " : "The export will be silent unless the source clips contain audio. ");
-    $("planText").textContent = "I’ll build a " + $("duration").value + "-second vertical edit from " + state.assets.length + " item(s). " + audioText + "Captions and voice-over are generated locally when selected or suitable.";
+    const sourceText = state.assets.length
+      ? "from " + state.assets.length + " uploaded item(s)"
+      : "from your prompt using original animated scenes";
+    $("planText").textContent = "I’ll build a " + $("duration").value + "-second vertical video " + sourceText + ". " + audioText + "Captions and voice-over are generated locally when selected or suitable.";
     $("planTags").innerHTML = words.map(w => "<span>" + safeName(w) + "</span>").join("");
     $("plan").hidden = false;
     return {
@@ -262,7 +265,8 @@
     const motivation = /motivational|motivation|inspirational|success|discipline|मेहनत|प्रेरणा/.test(p);
     const explain = /educational|explain|explainer|documentary|tutorial|history|science|facts|जानकारी/.test(p);
     const explicitlyRequested = /voice.?over|voiceover|narrat|speak|spoken words|storytelling/.test(p);
-    if (!(romantic || travel || motivation || explain || explicitlyRequested)) return null;
+    if (!state.assets.length && /no voice|no narration|without narration|silent video/.test(p)) return null;
+    if (!(romantic || travel || motivation || explain || explicitlyRequested || !state.assets.length)) return null;
     if (hindi) {
       if (romantic) return { text: "कुछ पल बिना कहे भी बहुत कुछ कह जाते हैं। कुछ कहानियाँ खत्म होकर भी दिल में रह जाती हैं।", language: "hi" };
       if (travel) return { text: "हर सफ़र सिर्फ़ मंज़िल तक पहुँचने के लिए नहीं होता। कुछ रास्ते यादों में बस जाते हैं।", language: "hi" };
@@ -274,6 +278,11 @@
     if (travel) return { text: "A journey is never only about the destination. It is about the moments that stay with you.", language: "en" };
     if (motivation) return { text: "Every great beginning starts with one small step. Keep moving. Your story is still being written.", language: "en" };
     if (explain) return { text: "There is a story behind every detail. Let us take a closer look and understand what makes it matter.", language: "en" };
+    const topic = plan.title || plan.prompt.replace(/\b(make|create|generate|a|an|the|video|reel|short|cinematic|professional|please)\b/gi, "").trim().slice(0, 70) || "this story";
+    if (!state.assets.length) {
+      if (hindi) return { text: "यह सिर्फ़ एक दृश्य नहीं, एक एहसास है। हर पल अपनी कहानी कहता है, और यह कहानी अभी शुरू हुई है।", language: "hi" };
+      return { text: "Every great story starts with an idea. This is " + topic + ". Stay with it, and see where the story takes you.", language: "en" };
+    }
     return { text: "Every frame holds a moment. Every moment leaves something behind.", language: "en" };
   }
 
@@ -963,7 +972,7 @@
 
   async function analyzeAssets(plan) {
     state.smartNotes = [];
-    if (!$("autoFrame").checked || !window.ReelForgeAI || !window.ReelForgeAI.analyzeVisual) return;
+    if (!state.assets.length || !$("autoFrame").checked || !window.ReelForgeAI || !window.ReelForgeAI.analyzeVisual) return;
     setStatus("Understanding your clips and tracking the main subjects…", 7);
     let successful = 0;
     try {
