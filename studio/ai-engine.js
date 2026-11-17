@@ -163,44 +163,80 @@
     const ctx = new OfflineContext(2, length, sampleRate);
     const master = ctx.createGain();
     const compressor = ctx.createDynamicsCompressor();
-    master.gain.value = 0.82;
-    compressor.threshold.value = -18;
+    compressor.threshold.value = -19;
     compressor.knee.value = 18;
-    compressor.ratio.value = 3;
-    compressor.attack.value = 0.01;
-    compressor.release.value = 0.22;
+    compressor.ratio.value = 3.2;
+    compressor.attack.value = 0.012;
+    compressor.release.value = 0.24;
+    master.gain.setValueAtTime(0.0001, 0);
+    master.gain.linearRampToValueAtTime(0.76, 1.1);
+    master.gain.setValueAtTime(0.76, Math.max(1.1, duration - 1.1));
+    master.gain.linearRampToValueAtTime(0.0001, duration);
     master.connect(compressor);
     compressor.connect(ctx.destination);
 
-    const progressions = mood === "romantic"
-      ? [[261.63,329.63,392],[220,261.63,329.63],[174.61,220,261.63],[196,246.94,293.66]]
-      : mood === "energetic"
-        ? [[196,246.94,293.66],[155.56,196,233.08],[174.61,220,261.63],[146.83,185,220]]
-        : [[220,261.63,329.63],[174.61,220,261.63],[130.81,164.81,196],[196,246.94,293.66]];
-    const bars = Math.ceil(duration / 4);
-    const barLength = 4;
-    const scale = mood === "energetic"
-      ? [0,3,5,7,10]
-      : [0,2,4,7,9];
+    const reverb = ctx.createConvolver();
+    const impulse = ctx.createBuffer(2, Math.floor(sampleRate * 1.35), sampleRate);
+    for (let channel = 0; channel < 2; channel++) {
+      const data = impulse.getChannelData(channel);
+      for (let i = 0; i < data.length; i++) {
+        const decay = Math.pow(1 - i / data.length, 2.8);
+        data[i] = (Math.random() * 2 - 1) * decay * 0.42;
+      }
+    }
+    reverb.buffer = impulse;
+    const wet = ctx.createGain();
+    wet.gain.value = mood === "romantic" || mood === "cinematic" ? 0.24 : 0.14;
+    master.connect(reverb);
+    reverb.connect(wet);
+    wet.connect(compressor);
 
-    function tone(frequency, start, seconds, volume, type, attack, release, filterFrequency) {
+    const bpm = mood === "energetic" ? 122 : mood === "romantic" ? 88 : mood === "travel" ? 108 : mood === "motivational" ? 112 : 96;
+    const beat = 60 / bpm;
+    const barLength = beat * 4;
+    const bars = Math.ceil(duration / barLength);
+    const progressions = mood === "romantic"
+      ? [[220,261.63,329.63],[174.61,220,261.63],[261.63,329.63,392],[196,246.94,293.66]]
+      : mood === "energetic"
+        ? [[196,246.94,293.66],[146.83,185,220],[174.61,220,261.63],[164.81,207.65,246.94]]
+        : mood === "travel"
+          ? [[261.63,329.63,392],[196,246.94,293.66],[220,261.63,329.63],[174.61,220,261.63]]
+          : mood === "motivational"
+            ? [[196,246.94,293.66],[220,277.18,329.63],[261.63,329.63,392],[174.61,220,261.63]]
+            : [[220,261.63,329.63],[174.61,220,261.63],[196,246.94,293.66],[146.83,185,220]];
+    const notes = mood === "energetic" ? [0,3,5,7,10] : [0,2,4,7,9];
+
+    function envelope(gain, start, peak, attack, hold, release) {
+      const safeStart = Math.max(0, start);
+      const peakAt = Math.min(duration, safeStart + Math.max(0.004, attack));
+      const holdAt = Math.min(duration, peakAt + Math.max(0.01, hold));
+      const endAt = Math.min(duration, holdAt + Math.max(0.025, release));
+      gain.gain.setValueAtTime(0.0001, safeStart);
+      gain.gain.linearRampToValueAtTime(peak, peakAt);
+      gain.gain.setValueAtTime(peak * 0.72, holdAt);
+      gain.gain.exponentialRampToValueAtTime(0.0001, Math.max(peakAt + 0.02, endAt));
+      return endAt;
+    }
+
+    function voice(frequency, start, seconds, volume, type, cutoff, attack, release, pan = 0) {
       if (start >= duration) return;
       const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
       const filter = ctx.createBiquadFilter();
-      osc.type = type || "sine";
+      const gain = ctx.createGain();
+      const panner = ctx.createStereoPanner();
+      osc.type = type || "triangle";
       osc.frequency.setValueAtTime(frequency, start);
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(filterFrequency || 3200, start);
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.linearRampToValueAtTime(volume, start + (attack || 0.03));
-      gain.gain.setValueAtTime(volume * 0.82, Math.min(duration, start + seconds * 0.55));
-      gain.gain.exponentialRampToValueAtTime(0.0001, Math.min(duration, start + seconds + (release || 0.1)));
+      filter.frequency.setValueAtTime(cutoff || 3000, start);
+      filter.Q.value = 0.65;
+      panner.pan.value = pan;
+      const stopAt = envelope(gain, start, volume, attack || 0.02, seconds * 0.58, release || 0.2);
       osc.connect(filter);
       filter.connect(gain);
-      gain.connect(master);
+      gain.connect(panner);
+      panner.connect(master);
       osc.start(start);
-      osc.stop(Math.min(duration, start + seconds + (release || 0.1) + 0.02));
+      osc.stop(Math.min(duration, stopAt + 0.03));
     }
 
     function kick(start, volume) {
@@ -208,57 +244,90 @@
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(115, start);
-      osc.frequency.exponentialRampToValueAtTime(43, start + 0.14);
+      osc.frequency.setValueAtTime(132, start);
+      osc.frequency.exponentialRampToValueAtTime(42, Math.min(duration, start + 0.16));
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(volume, start + 0.008);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.2);
+      gain.gain.exponentialRampToValueAtTime(volume, Math.min(duration, start + 0.008));
+      gain.gain.exponentialRampToValueAtTime(0.0001, Math.min(duration, start + 0.22));
       osc.connect(gain);
       gain.connect(master);
       osc.start(start);
-      osc.stop(start + 0.22);
+      osc.stop(Math.min(duration, start + 0.24));
     }
 
-    const noiseBuffer = ctx.createBuffer(1, Math.ceil(sampleRate * 0.12), sampleRate);
+    const noiseBuffer = ctx.createBuffer(1, Math.ceil(sampleRate * 0.2), sampleRate);
     const noise = noiseBuffer.getChannelData(0);
     for (let i = 0; i < noise.length; i++) noise[i] = (Math.random() * 2 - 1) * (1 - i / noise.length);
-    function hat(start) {
+
+    function noiseHit(start, volume, frequency, lengthSeconds, pan = 0) {
       if (start >= duration) return;
       const source = ctx.createBufferSource();
       const filter = ctx.createBiquadFilter();
       const gain = ctx.createGain();
+      const panner = ctx.createStereoPanner();
       source.buffer = noiseBuffer;
       filter.type = "highpass";
-      filter.frequency.value = 6500;
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.linearRampToValueAtTime(0.055, start + 0.004);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.075);
+      filter.frequency.value = frequency;
+      panner.pan.value = pan;
+      const stopAt = envelope(gain, start, volume, 0.004, lengthSeconds * 0.22, lengthSeconds * 0.78);
       source.connect(filter);
       filter.connect(gain);
-      gain.connect(master);
+      gain.connect(panner);
+      panner.connect(master);
       source.start(start);
-      source.stop(start + 0.09);
+      source.stop(Math.min(duration, stopAt + 0.015));
+    }
+
+    function pluck(frequency, start, volume, pan = 0) {
+      if (start >= duration) return;
+      const osc = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+      const panner = ctx.createStereoPanner();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(frequency, start);
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(2600, start);
+      filter.frequency.exponentialRampToValueAtTime(720, Math.min(duration, start + 0.28));
+      panner.pan.value = pan;
+      const stopAt = envelope(gain, start, volume, 0.006, 0.035, 0.28);
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(panner);
+      panner.connect(master);
+      osc.start(start);
+      osc.stop(Math.min(duration, stopAt + 0.02));
     }
 
     for (let bar = 0; bar < bars; bar++) {
       const start = bar * barLength;
       const chord = progressions[bar % progressions.length];
-      for (const frequency of chord) {
-        tone(frequency, start, barLength * 0.92, 0.032, "triangle", 0.45, 0.35, 1500);
-        tone(frequency * 2, start + 0.08, barLength * 0.75, 0.009, "sine", 0.7, 0.4, 2400);
+      const build = bar / Math.max(1, bars - 1);
+      for (let i = 0; i < chord.length; i++) {
+        const frequency = chord[i];
+        const pan = (i - 1.5) * 0.12;
+        voice(frequency, start, barLength * 0.92, 0.025, "sawtooth", 1250, 0.55, 0.4, pan);
+        voice(frequency * 2, start + 0.04, barLength * 0.8, 0.012, "sine", 2600, 0.7, 0.34, -pan);
       }
       const root = chord[0] / 2;
-      for (let beat = 0; beat < 4; beat++) {
-        const t = start + beat;
-        tone(root, t, 0.46, mood === "energetic" ? 0.11 : 0.07, "triangle", 0.01, 0.18, 600);
-        if (beat === 0 || (mood === "energetic" && beat === 2)) kick(t, mood === "energetic" ? 0.22 : 0.13);
-        hat(t + 0.5);
-        const note = chord[0] * Math.pow(2, scale[(bar + beat) % scale.length] / 12);
-        tone(note, t + 0.52, 0.16, mood === "energetic" ? 0.055 : 0.026, "sine", 0.006, 0.16, 5000);
+      for (let beatNo = 0; beatNo < 4; beatNo++) {
+        const t = start + beat * beatNo;
+        voice(root, t, beat * 0.8, mood === "energetic" ? 0.11 : 0.075, "triangle", 520, 0.012, 0.18, -0.08);
+        if (beatNo === 0 || (mood === "energetic" && beatNo === 2)) kick(t, mood === "energetic" ? 0.22 : 0.12);
+        if (beatNo === 1 || beatNo === 3) noiseHit(t, mood === "energetic" ? 0.055 : 0.025, 1700, 0.12, 0.1);
+        noiseHit(t + beat * 0.5, mood === "energetic" ? 0.045 : 0.022, 6200, 0.07, beatNo % 2 ? -0.25 : 0.25);
+      }
+      const arpCount = mood === "energetic" || mood === "travel" ? 8 : 4;
+      for (let step = 0; step < arpCount; step++) {
+        const interval = barLength / arpCount;
+        const degree = notes[(step + bar) % notes.length];
+        const base = chord[step % chord.length];
+        const frequency = base * Math.pow(2, degree / 12);
+        pluck(frequency, start + step * interval, (0.026 + build * 0.012) * (mood === "energetic" ? 1.45 : 1), (step % 2 ? 0.34 : -0.34));
       }
     }
-    const buffer = await ctx.startRendering();
-    return buffer;
+
+    return await ctx.startRendering();
   }
 
   let detectorPromise = null;
