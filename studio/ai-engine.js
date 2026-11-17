@@ -238,15 +238,22 @@
     if (!clean) throw new Error("Add a short narration script before generating a voice.");
     if (clean.length > 800) throw new Error("Keep narration under 800 characters for reliable phone rendering.");
     const model = await makeTTS(onProgress);
-    const hindi = language === "hi" || /[\u0900-\u097F]/.test(clean);
-    const voice = hindi
-      ? (voiceGender === "male" ? "hm_omega" : "hf_alpha")
-      : (voiceGender === "male" ? "am_michael" : "af_bella");
-    sayProgress(onProgress, "Creating the narration on your phone…", 48);
-    const result = await model.generate(clean, { voice, speed: 1.02 });
-    const samples = result && result.audio ? result.audio : null;
-    if (!samples || !samples.length) throw new Error("The voice model did not return audio.");
-    return { samples: new Float32Array(samples), sampleRate: result.sampling_rate || 24000, text: clean };
+    try {
+      const hindi = language === "hi" || /[\u0900-\u097F]/.test(clean);
+      const voice = hindi
+        ? (voiceGender === "male" ? "hm_omega" : "hf_alpha")
+        : (voiceGender === "male" ? "am_michael" : "af_bella");
+      sayProgress(onProgress, "Creating the narration on your phone…", 48);
+      const result = await model.generate(clean, { voice, speed: 1.02 });
+      const samples = result && result.audio ? result.audio : null;
+      if (!samples || !samples.length) throw new Error("The voice model did not return audio.");
+      return { samples: new Float32Array(samples), sampleRate: result.sampling_rate || 24000, text: clean };
+    } finally {
+      if (model && typeof model.dispose === "function") {
+        try { await model.dispose(); } catch (_) {}
+      }
+      ttsPromise = null;
+    }
   }
 
   async function generateMusic(duration, mood) {
