@@ -776,15 +776,34 @@
 
     const beats = plan.beatSync && state.audioFile ? await detectBeats(state.audioFile) : (plan.beatTimes || []);
     const orderedAssets = orderedAssetsForPlan(plan);
-    const shotList = buildShotList(orderedAssets, duration, plan);
-    const boundaries = createBoundaries(duration, shotList.length, beats, plan.beatSync);
-    const timeline = shotList.map((shot, index) => ({
-      ...shot,
-      start: boundaries[index],
-      end: boundaries[index + 1],
-      duration: boundaries[index + 1] - boundaries[index],
-      endPoster: null
-    }));
+    let timeline = [];
+    if (orderedAssets.length) {
+      const shotList = buildShotList(orderedAssets, duration, plan);
+      const boundaries = createBoundaries(duration, shotList.length, beats, plan.beatSync);
+      timeline = shotList.map((shot, index) => ({
+        ...shot,
+        generated: false,
+        start: boundaries[index],
+        end: boundaries[index + 1],
+        duration: boundaries[index + 1] - boundaries[index],
+        endPoster: null
+      }));
+    } else {
+      const storyboard = buildPromptStoryboard(plan, duration);
+      const boundaries = createBoundaries(duration, storyboard.length, beats, plan.beatSync);
+      timeline = storyboard.map((story, index) => ({
+        generated: true,
+        story,
+        asset: null,
+        overlay: "",
+        shotIndex: index,
+        shotCount: storyboard.length,
+        start: boundaries[index],
+        end: boundaries[index + 1],
+        duration: boundaries[index + 1] - boundaries[index]
+      }));
+    }
+    if (!timeline.length) throw new Error("No scenes were prepared. Add a prompt or upload media.");
     const mimeCandidates = [
       "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
       "video/mp4",
@@ -841,7 +860,7 @@
       const audioByAsset = new Map();
       for (const scene of timeline) {
         const asset = scene.asset;
-        if (asset.image) continue;
+        if (!asset || asset.image) continue;
         try {
           let entry = audioByAsset.get(asset);
           if (!entry) {
@@ -933,8 +952,20 @@
       return result;
     }
 
+    function paintScene(scene, local, sceneIndex, alpha, slideOffset, usePoster = false, time = 0) {
+      if (scene.generated) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        if (slideOffset) ctx.translate(width * slideOffset, 0);
+        drawPromptScene(ctx, width, height, scene.story, local, time, sceneIndex, plan);
+        ctx.restore();
+        return true;
+      }
+      return paintAsset(scene.asset, scene, local, sceneIndex, alpha, slideOffset, usePoster);
+    }
+
     function captureEndFrame(scene) {
-      if (!scene || scene.asset.image) return;
+      if (!scene || scene.generated || !scene.asset || scene.asset.image) return;
       const video = scene.asset.element;
       if (!video || video.readyState < 2 || !video.videoWidth) return;
       try {
@@ -966,20 +997,21 @@
       const scene = timeline[index];
       const local = clamp((t - scene.start) / scene.duration, 0, 1);
 
-      if (!scene.asset.image && scene.asset.element.currentTime >= (scene.sourceEnd || scene.asset.duration) - 0.035) {
+      if (!scene.generated && scene.asset && !scene.asset.image &&
+          scene.asset.element.currentTime >= (scene.sourceEnd || scene.asset.duration) - 0.035) {
         scene.asset.element.pause();
       }
 
       if (index !== activeIndex) {
         if (activeIndex >= 0) {
           const previousScene = timeline[activeIndex];
-          if (!previousScene.asset.image) {
+          if (!previousScene.generated && previousScene.asset && !previousScene.asset.image) {
             captureEndFrame(previousScene);
             previousScene.asset.element.pause();
           }
         }
         activeIndex = index;
-        if (!scene.asset.image) {
+        if (!scene.generated && scene.asset && !scene.asset.image) {
           const video = scene.asset.element;
           video.muted = false;
           video.pause();
@@ -997,11 +1029,11 @@
       const inTransition = index > 0 && t - scene.start < transitionLength;
       if (inTransition) {
         const previous = timeline[index - 1];
-        paintAsset(previous.asset, previous, 1, index - 1, 1 - transitionProgress, 0, true);
+        paintScene(previous, 1, index - 1, 1 - transitionProgress, 0, true, previous.end);
         if (plan.transition === "slide") {
-          drew = paintAsset(scene.asset, scene, local, index, transitionProgress, 1 - transitionProgress);
+          drew = paintScene(scene, local, index, transitionProgress, 1 - transitionProgress, false, t);
         } else {
-          drew = paintAsset(scene.asset, scene, local, index, transitionProgress, 0);
+          drew = paintScene(scene, local, index, transitionProgress, 0, false, t);
         }
         if (plan.transition === "flash") {
           ctx.fillStyle = "rgba(255,248,232," + (0.38 * Math.sin(transitionProgress * Math.PI)) + ")";
@@ -1011,7 +1043,7 @@
           ctx.fillRect(0, 0, width, height);
         }
       } else {
-        drew = paintAsset(scene.asset, scene, local, index, 1, 0);
+        drew = paintScene(scene, local, index, 1, 0, false, t);
       }
       if (!drew && !inTransition) {
         ctx.fillStyle = "#1c2028";
@@ -1040,7 +1072,7 @@
       if (elapsed >= duration && !stopped) {
         stopped = true;
         if (animationId) cancelAnimationFrame(animationId);
-        timeline.forEach(s => { if (!s.asset.image) s.asset.element.pause(); });
+        timeline.forEach(s => { if (!s.generated && s.asset && !s.asset.image) s.asset.element.pause(); });
         recorder.stop();
         setStatus("Finishing your edited video…", 98);
         return;
@@ -1056,13 +1088,13 @@
     recorder.start(500);
     if (audioContext) await audioContext.resume();
     const first = timeline[0];
-    if (!first.asset.image) {
+    if (!first.generated && first.asset && !first.asset.image) {
       first.asset.element.currentTime = first.sourceStart || 0;
       await first.asset.element.play().catch(() => {});
     }
     animationId = requestAnimationFrame(draw);
     const blob = await recorded;
-    timeline.forEach(s => { if (!s.asset.image) s.asset.element.pause(); });
+    timeline.forEach(s => { if (!s.generated && s.asset && !s.asset.image) s.asset.element.pause(); });
     stream.getTracks().forEach(track => track.stop());
     audioNodes.forEach(node => {
       if (node.persistent) { try { node.gain.disconnect(); } catch (_) {} }
@@ -1342,7 +1374,7 @@
   }
 
   async function generate() {
-    if (!state.assets.length || state.rendering) return;
+    if ((!state.assets.length && !promptInput.value.trim()) || state.rendering) return;
     clearOutput();
     state.rendering = true;
     const controls = ["mediaFiles","audioFile","editPrompt","duration","quality","autoCaptions","autoMusic","autoVoice","autoFrame","autoDirector","voiceLanguage","voiceGender","narrationText"];
@@ -1398,7 +1430,7 @@
       $("downloadBtn").download = filename;
       $("outputInfo").textContent = result.width + " × " + result.height + " · " + result.duration + " sec · " + extension.toUpperCase();
       const included = [
-        "animated camera movement",
+        !state.assets.length ? "original animated motion-graphic scenes" : "animated camera movement",
         "scene transitions and VFX",
         production.captions.length ? "timed captions" : "",
         production.voice ? "neural voice-over" : "",
@@ -1437,10 +1469,12 @@
   document.querySelectorAll("[data-prompt]").forEach(button => button.addEventListener("click", () => {
     promptInput.value = button.dataset.prompt;
     parsePrompt();
+    updateReady();
   }));
   promptInput.addEventListener("input", () => {
-    if (state.assets.length) parsePrompt();
+    parsePrompt();
     clearOutput();
+    updateReady();
   });
   $("duration").addEventListener("change", clearOutput);
   $("quality").addEventListener("change", clearOutput);
