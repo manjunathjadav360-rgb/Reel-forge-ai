@@ -486,10 +486,116 @@
     detectorPromise = null;
   }
 
+  let directorPromise = null;
+
+  async function makeDirector(onProgress) {
+    if (directorPromise) return directorPromise;
+    directorPromise = (async () => {
+      sayProgress(onProgress, "Loading ReelForge's local creative director…", 6);
+      const { pipeline, env } = await getTransformers();
+      env.allowRemoteModels = true;
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
+      const useGPU = !!navigator.gpu;
+      const progress_callback = event => {
+        if (event && event.status === "progress" && Number.isFinite(event.progress)) {
+          sayProgress(onProgress, "Downloading creative-director model… " + Math.round(event.progress) + "%", 6 + event.progress * 0.24);
+        }
+      };
+      try {
+        return await pipeline("text-generation", "onnx-community/SmolLM2-135M-Instruct-ONNX-MHA", {
+          dtype: useGPU ? "q4f16" : "q4",
+          device: useGPU ? "webgpu" : "wasm",
+          progress_callback
+        });
+      } catch (error) {
+        if (!useGPU) throw error;
+        console.warn("Creative director WebGPU fallback:", error);
+        return await pipeline("text-generation", "onnx-community/SmolLM2-135M-Instruct-ONNX-MHA", {
+          dtype: "q4",
+          device: "wasm",
+          progress_callback
+        });
+      }
+    })().catch(error => {
+      directorPromise = null;
+      throw error;
+    });
+    return directorPromise;
+  }
+
+  function extractGeneratedText(result) {
+    const first = Array.isArray(result) ? result[0] : result;
+    if (!first) return "";
+    if (typeof first.generated_text === "string") return first.generated_text;
+    if (Array.isArray(first.generated_text)) {
+      const last = first.generated_text[first.generated_text.length - 1];
+      return String(last && (last.content || last.text) || "");
+    }
+    return String(first.text || "");
+  }
+
+  async function planEdit(brief, assets, language, onProgress) {
+    const promptText = String(brief || "").trim();
+    if (!promptText) return null;
+    const director = await makeDirector(onProgress);
+    const context = (Array.isArray(assets) ? assets : []).map((asset, index) => ({
+      clip: index,
+      kind: asset && asset.kind === "photo" ? "photo" : "video",
+      name: String(asset && asset.name || "clip " + (index + 1)).slice(0, 70),
+      subjects: Array.isArray(asset && asset.tags) ? asset.tags.slice(0, 4) : []
+    }));
+    const system = "You are ReelForge, a concise short-form video creative director. Turn the user's brief and available source-media inventory into an actionable edit plan. Do not claim to generate new footage: plan how to use supplied clips/photos. Output only valid JSON, no markdown. Keys: mood (cinematic|romantic|travel|energetic|motivational|calm), look (clean|cinematic|warm|mono), transition (crossfade|slide|flash|zoom), pace (slow|balanced|fast), title (short string or empty), voiceover (short English narration script or empty if not useful or if user asked for Hindi), clipOrder (array of zero-based clip indexes, each at most once), visualNotes (array of up to 3 short strings), musicMood (cinematic|romantic|travel|energetic|motivational). Keep voiceover to 1-2 sentences, never invent facts about footage.";
+    const languageHint = language === "hi"
+      ? "The user requested Hindi. Leave voiceover empty; a Hindi fallback script will be used when suitable."
+      : "The user requested English or did not specify another language.";
+    const user = "EDIT BRIEF:\n" + promptText + "\n\nSOURCE MEDIA INVENTORY:\n" + JSON.stringify(context) +
+      "\n\nLANGUAGE:\n" + languageHint + "\n\nReturn one JSON object only.";
+    const chat = "<|im_start|>system\n" + system + "<|im_end|>\n<|im_start|>user\n" + user + "<|im_end|>\n<|im_start|>assistant\n";
+    sayProgress(onProgress, "Planning your edit and narration locally…", 36);
+    const result = await director(chat, {
+      max_new_tokens: 220,
+      do_sample: false,
+      return_full_text: false
+    });
+    const raw = extractGeneratedText(result);
+    const firstBrace = raw.indexOf("{");
+    const lastBrace = raw.lastIndexOf("}");
+    if (firstBrace < 0 || lastBrace <= firstBrace) throw new Error("The creative director did not return a usable edit plan.");
+    const data = JSON.parse(raw.slice(firstBrace, lastBrace + 1));
+    const allowed = {
+      mood: ["cinematic","romantic","travel","energetic","motivational","calm"],
+      look: ["clean","cinematic","warm","mono"],
+      transition: ["crossfade","slide","flash","zoom"],
+      pace: ["slow","balanced","fast"],
+      musicMood: ["cinematic","romantic","travel","energetic","motivational"]
+    };
+    for (const key of Object.keys(allowed)) {
+      if (!allowed[key].includes(data[key])) delete data[key];
+    }
+    data.title = String(data.title || "").slice(0, 70);
+    data.voiceover = language === "hi" ? "" : String(data.voiceover || "").slice(0, 450);
+    data.visualNotes = Array.isArray(data.visualNotes) ? data.visualNotes.map(x => String(x).slice(0, 90)).slice(0, 3) : [];
+    const order = Array.isArray(data.clipOrder) ? data.clipOrder.map(Number).filter((n, i, arr) => Number.isInteger(n) && n >= 0 && n < context.length && arr.indexOf(n) === i) : [];
+    data.clipOrder = [...order, ...context.map((_, i) => i).filter(i => !order.includes(i))];
+    return data;
+  }
+
+  async function releaseDirector() {
+    if (!directorPromise) return;
+    try {
+      const director = await directorPromise;
+      if (director && typeof director.dispose === "function") await director.dispose();
+    } catch (_) {}
+    directorPromise = null;
+  }
+
   window.ReelForgeAI = {
     transcribe,
     synthesize,
     generateMusic,
+    planEdit,
+    releaseDirector,
     analyzeVisual,
     releaseVision
   };
