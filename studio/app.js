@@ -673,24 +673,72 @@
     state.recorder = null;
     return { blob, mimeType: recorder.mimeType || mimeType, duration, width, height };
   }
+  async function prepareProduction(plan) {
+    const duration = Number($("duration").value);
+    const production = { voice: null, captions: [], musicBuffer: null, notes: [] };
+    const narration = narrationFor(plan);
+
+    if (narration) {
+      try {
+        if (!window.ReelForgeAI) throw new Error("The local AI engine did not load. Refresh the page and try again.");
+        production.voice = await window.ReelForgeAI.synthesize(
+          narration.text,
+          narration.language,
+          $("voiceGender").value,
+          (message, percent) => setStatus(message, percent)
+        );
+        if ($("autoCaptions").checked) production.captions = captionsFromScript(narration.text, duration);
+      } catch (error) {
+        production.notes.push("Voice-over skipped: " + error.message);
+        if ($("autoCaptions").checked) production.captions = captionsFromScript(narration.text, duration);
+      }
+    }
+
+    if (!production.voice && $("autoCaptions").checked) {
+      const sourceFile = state.audioFile || (state.assets.find(asset => !asset.image) || {}).file;
+      if (sourceFile) {
+        try {
+          if (!window.ReelForgeAI) throw new Error("The local AI engine did not load.");
+          const transcript = await window.ReelForgeAI.transcribe(sourceFile, (message, percent) => setStatus(message, percent));
+          production.captions = captionsFromTranscript(transcript);
+          if (!production.captions.length) production.notes.push("No clear speech was found for automatic captions.");
+        } catch (error) {
+          production.notes.push("Automatic captions skipped: " + error.message);
+        }
+      } else {
+        production.notes.push("No audio track was available to transcribe. Add an audio file or use video clips with speech for automatic captions.");
+      }
+    }
+
+    if (!state.audioFile && $("autoMusic").checked) {
+      try {
+        setStatus("Composing an original instrumental score…", 39);
+        production.musicBuffer = await window.ReelForgeAI.generateMusic(duration, plan.mood);
+      } catch (error) {
+        production.notes.push("Generated music skipped: " + error.message);
+      }
+    }
+    return production;
+  }
+
   async function generate() {
     if (!state.assets.length || state.rendering) return;
     clearOutput();
     state.rendering = true;
-    mediaInput.disabled = true;
-    audioInput.disabled = true;
-    promptInput.disabled = true;
-    $("duration").disabled = true;
-    $("quality").disabled = true;
+    const controls = ["mediaFiles","audioFile","editPrompt","duration","quality","autoCaptions","autoMusic","autoVoice","voiceLanguage","voiceGender","narrationText"];
+    controls.forEach(id => { const control = $(id); if (control) control.disabled = true; });
     updateReady();
     $("renderPanel").hidden = false;
-    $("renderState").textContent = "Working";
-    setStatus("Reading your prompt and preparing the edit…", 2);
+    $("renderState").textContent = "Preparing";
+    setStatus("Reading your one-prompt edit brief…", 2);
     $("renderPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    let production = { voice: null, captions: [], musicBuffer: null, notes: [] };
     try {
       const plan = parsePrompt();
       if (state.assets.some(a => !a.ready)) throw new Error("One of your files has not finished loading. Please try again.");
-      const result = await renderEdit(plan);
+      production = await prepareProduction(plan);
+      setStatus("Building animated scenes, transitions and effects…", 47);
+      const result = await renderEdit(plan, production);
       state.outputBlob = result.blob;
       state.outputUrl = URL.createObjectURL(result.blob);
       $("outputVideo").src = state.outputUrl;
@@ -700,23 +748,27 @@
       $("downloadBtn").href = state.outputUrl;
       $("downloadBtn").download = filename;
       $("outputInfo").textContent = result.width + " × " + result.height + " · " + result.duration + " sec · " + extension.toUpperCase();
-      $("formatNote").textContent = mp4
-        ? "Your browser recorded an MP4. The file has no added watermark."
-        : "Your phone's browser recorded WEBM, not MP4. This version does not run a heavy phone-side MP4 conversion yet. Download is watermark-free; Instagram compatibility may vary.";
+      const included = [
+        "animated camera movement",
+        "scene transitions and VFX",
+        production.captions.length ? "timed captions" : "",
+        production.voice ? "neural voice-over" : "",
+        production.musicBuffer ? "original instrumental score" : (state.audioFile ? "your uploaded audio" : "")
+      ].filter(Boolean).join(" · ");
+      $("formatNote").textContent = (mp4
+        ? "Watermark-free MP4 export. "
+        : "Watermark-free WEBM export. This phone browser does not expose MP4 recording; WEBM may not upload directly to Instagram. ") +
+        "Included: " + included + ". " + (production.notes.length ? "Notes: " + production.notes.join(" ") : "");
       $("outputWrap").hidden = false;
       $("renderState").textContent = "Ready";
-      setStatus("Your edit is ready.", 100);
+      setStatus("Your edited video is ready.", 100);
     } catch (error) {
       $("renderState").textContent = "Needs attention";
       setStatus(error.message || "Something went wrong while rendering.", 0);
       console.error(error);
     } finally {
       state.rendering = false;
-      mediaInput.disabled = false;
-      audioInput.disabled = false;
-      promptInput.disabled = false;
-      $("duration").disabled = false;
-      $("quality").disabled = false;
+      controls.forEach(id => { const control = $(id); if (control) control.disabled = false; });
       updateReady();
     }
   }
