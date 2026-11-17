@@ -152,7 +152,7 @@
     return {
       prompt, look, mood, transition,
       title: quoteMatch ? quoteMatch[1] : "",
-      beatSync: /beat|music|rhythm|sync/.test(lower) && !!state.audioFile,
+      beatSync: !!state.audioFile || $("autoMusic").checked || /beat|music|rhythm|sync/.test(lower),
       fast: /fast|energetic|quick|car edit|sports/.test(lower),
       slow: /slow|emotional|calm|memory/.test(lower),
       fades: /fade|smooth|transition/.test(lower),
@@ -544,7 +544,7 @@
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("This browser cannot create the video canvas.");
 
-    const beats = plan.beatSync ? await detectBeats(state.audioFile) : [];
+    const beats = plan.beatSync && state.audioFile ? await detectBeats(state.audioFile) : (plan.beatTimes || []);
     const boundaries = createBoundaries(duration, state.assets.length, beats, plan.beatSync);
     const orderedAssets = orderedAssetsForPlan(plan);
     const timeline = orderedAssets.map((asset, index) => ({
@@ -885,7 +885,7 @@
         try {
           if (!window.ReelForgeAI) throw new Error("The local AI engine did not load.");
           setStatus("Finding spoken dialogue in your source clips…", 12);
-          const beats = plan.beatSync && state.audioFile ? await detectBeats(state.audioFile) : [];
+          const beats = plan.beatSync && state.audioFile ? await detectBeats(state.audioFile) : (plan.beatTimes || []);
           const boundaries = createBoundaries(duration, orderedAssets.length, beats, plan.beatSync);
           for (let index = 0; index < orderedAssets.length; index++) {
             const asset = orderedAssets[index];
@@ -918,8 +918,12 @@
     }
     if (!state.audioFile && $("autoMusic").checked) {
       try {
-        setStatus("Composing an original instrumental score…", 39);
-        production.musicBuffer = await window.ReelForgeAI.generateMusic(duration, plan.mood);
+        setStatus("Composing an original instrumental score…", 24);
+        const score = await window.ReelForgeAI.generateMusic(duration, plan.mood);
+        production.musicBuffer = score.buffer;
+        production.musicBpm = score.bpm;
+        plan.beatTimes = [];
+        for (let time = 0; time < duration; time += score.beatSeconds) plan.beatTimes.push(time);
       } catch (error) {
         production.notes.push("Generated music skipped: " + error.message);
       }
