@@ -316,8 +316,8 @@ def _generate_wan_scenes(plan, count):
                     ),
                     height=832,
                     width=480,
-                    num_frames=49,
-                    num_inference_steps=18,
+                    num_frames=81,
+                    num_inference_steps=16,
                     guidance_scale=5.0,
                     generator=torch.Generator(device="cuda").manual_seed(2600 + index)
                 )
@@ -1073,10 +1073,10 @@ def _run_pipeline(raw_files, audio_files, prompt, duration):
     plan["source_inventory"] = media_inventory
 
     _progress("Generating original moving AI scenes…")
-    ai_count = min(
-        12,
-        max(4, math.ceil(duration / (3.1 if not raw_files else 7.5)))
-    )
+    # Wan scenes are 81 frames at 16 fps (about 5 seconds each).
+    # Generate enough distinct shots to cover prompt-only reels without looping a few frames.
+    target_scene_seconds = 5.0 if not raw_files else 10.0
+    ai_count = min(12, max(2, math.ceil(duration / target_scene_seconds)))
     ai_paths = _generate_broll(plan, ai_count)
     gc.collect()
     torch.cuda.empty_cache()
