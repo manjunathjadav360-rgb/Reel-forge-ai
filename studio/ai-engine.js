@@ -421,7 +421,7 @@
       }
     }
 
-    return await ctx.startRendering();
+    return { buffer: await ctx.startRendering(), bpm, beatSeconds: beat };
   }
 
   let detectorPromise = null;
