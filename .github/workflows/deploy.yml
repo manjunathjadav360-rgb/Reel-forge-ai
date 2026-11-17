@@ -18,6 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -31,6 +34,12 @@ jobs:
           node --check widget-client.js
           node --check studio/app.js
           node --check studio/ai-engine.js
+      - name: Validate Colab renderer and notebook
+        run: |
+          python -m py_compile colab/reelforge_cloud.py
+          python -m json.tool colab/ReelForge_One_Prompt_Studio.ipynb > /dev/null
+          test -f colab/reelforge_cloud.py
+          test -f colab/ReelForge_One_Prompt_Studio.ipynb
       - name: Verify AIKIVO app files and core screens
         run: |
           test -f index.html
