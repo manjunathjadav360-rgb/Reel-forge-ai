@@ -30,6 +30,7 @@ jobs:
           node --check widget.js
           node --check widget-client.js
           node --check studio/app.js
+          node --check studio/ai-engine.js
       - name: Verify AIKIVO app files and core screens
         run: |
           test -f index.html
@@ -45,6 +46,7 @@ jobs:
           test -f studio/index.html
           test -f studio/styles.css
           test -f studio/app.js
+          test -f studio/ai-engine.js
           test -f studio/manifest.webmanifest
           test -f studio/sw.js
           test -f studio/icon.svg
