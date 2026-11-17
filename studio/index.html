@@ -20,19 +20,19 @@
     <section class="intro">
       <p class="eyebrow">YOUR PERSONAL EDITOR</p>
       <h1>Drop your clips.<br><em>Describe the edit.</em></h1>
-      <p class="intro-copy">One prompt in. A finished vertical edit out. Your files stay in this browser.</p>
+      <p class="intro-copy">One prompt in. A finished vertical edit out. Start with a prompt alone, or add your own footage and audio.</p>
     </section>
 
     <section class="panel upload-panel">
-      <div class="panel-heading"><div><span class="step">01</span><h2>Your footage</h2></div><span class="muted">Photos + videos</span></div>
+      <div class="panel-heading"><div><span class="step">01</span><h2>Your footage <small>(optional)</small></h2></div><span class="muted">Photos + videos</span></div>
       <label class="dropzone" for="mediaFiles" id="dropzone">
         <span class="upload-symbol">＋</span>
-        <strong>Add raw clips</strong>
-        <span>Choose multiple videos or photos from your phone</span>
+        <strong>Add raw clips (optional)</strong>
+        <span>Or leave this empty to create animated scenes from your prompt</span>
         <small>MP4, MOV, WEBM, JPG, PNG · Up to 12 files</small>
       </label>
       <input id="mediaFiles" type="file" accept="video/*,image/*" multiple hidden>
-      <div id="assetList" class="asset-list" aria-live="polite"><p class="empty-state">Your selected files will appear here.</p></div>
+      <div id="assetList" class="asset-list" aria-live="polite"><p class="empty-state">No footage added. Prompt-only video mode is ready.</p></div>
       <div class="audio-row">
         <div class="audio-copy"><span class="audio-symbol">♫</span><div><strong>Specific audio (optional)</strong><small>Upload a song or sound file you have permission to use.</small></div></div>
         <label class="audio-pick" for="audioFile">Choose audio</label>
@@ -52,13 +52,13 @@
       </div>
       <label class="field-label narration-label" for="narrationText">Narration script (optional)</label>
       <textarea id="narrationText" class="narration-input" rows="2" maxlength="800" placeholder="Leave blank and ReelForge will add a short voice-over only when the prompt suits one."></textarea>
-      <p class="model-note">Free open-weight models download on first use; the full set can take several hundred megabytes. Model files are cached by your browser. A Wi-Fi connection is recommended. Inference runs in your browser; no API key or paid inference service.</p>
+      <p class="model-note">Free open-weight models download on first use. The first download can be several hundred megabytes and requires Wi-Fi. Models run in your browser; no API key or paid inference service.</p>
     </section>
 
     <section class="panel prompt-panel">
       <div class="panel-heading"><div><span class="step">02</span><h2>Tell your editor</h2></div><span class="muted">One prompt</span></div>
       <label class="field-label" for="editPrompt">Describe the finished reel</label>
-      <textarea id="editPrompt" rows="4" maxlength="900" placeholder="Example: Make a 30-second cinematic car reel. Use quick cuts synced to my music, smooth fades, warm colour grading and a clean title. Keep it premium, not over-edited."></textarea>
+      <textarea id="editPrompt" rows="4" maxlength="900" placeholder="Example: Create a 30-second Hindi 2D animated love story with a surprising emotional ending. Build the scenes, narration, captions and original music."></textarea>
       <div class="prompt-examples">
         <button type="button" class="example" data-prompt="Make a cinematic 30-second travel reel. Use smooth transitions, gentle zooms on photos, warm colours and cuts synced to my music.">Cinematic travel</button>
         <button type="button" class="example" data-prompt="Make a 15-second fast-paced car reel. Use energetic cuts synced to the beat, punchy contrast and subtle motion. No unnecessary text.">Car edit</button>
