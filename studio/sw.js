@@ -1,4 +1,4 @@
-const CACHE_NAME = "reelforge-studio-v6";
+const CACHE_NAME = "reelforge-studio-v7";
 const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./ai-engine.js", "./manifest.webmanifest", "./icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)));
