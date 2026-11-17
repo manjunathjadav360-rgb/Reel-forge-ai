@@ -502,21 +502,36 @@
           sayProgress(onProgress, "Downloading creative-director model… " + Math.round(event.progress) + "%", 6 + event.progress * 0.24);
         }
       };
-      try {
-        return await pipeline("text-generation", "onnx-community/SmolLM2-135M-Instruct-ONNX-MHA", {
-          dtype: useGPU ? "q4f16" : "q4",
-          device: useGPU ? "webgpu" : "wasm",
-          progress_callback
-        });
-      } catch (error) {
-        if (!useGPU) throw error;
-        console.warn("Creative director WebGPU fallback:", error);
-        return await pipeline("text-generation", "onnx-community/SmolLM2-135M-Instruct-ONNX-MHA", {
-          dtype: "q4",
-          device: "wasm",
-          progress_callback
-        });
+      const models = [
+        "onnx-community/Qwen2.5-0.5B-Instruct-ONNX-MHA",
+        "onnx-community/SmolLM2-135M-Instruct-ONNX-MHA"
+      ];
+      let lastError = null;
+      for (const modelId of models) {
+        try {
+          sayProgress(onProgress, modelId.includes("Qwen") ? "Loading the multilingual creative director…" : "Loading the lightweight fallback director…", 8);
+          return await pipeline("text-generation", modelId, {
+            dtype: useGPU ? "q4f16" : "q4",
+            device: useGPU ? "webgpu" : "wasm",
+            progress_callback
+          });
+        } catch (error) {
+          lastError = error;
+          console.warn("Creative director model fallback:", modelId, error);
+          if (useGPU) {
+            try {
+              return await pipeline("text-generation", modelId, {
+                dtype: "q4",
+                device: "wasm",
+                progress_callback
+              });
+            } catch (cpuError) {
+              lastError = cpuError;
+            }
+          }
+        }
       }
+      throw lastError || new Error("No compatible local creative-director model could be loaded.");
     })().catch(error => {
       directorPromise = null;
       throw error;
@@ -545,16 +560,16 @@
       name: String(asset && asset.name || "clip " + (index + 1)).slice(0, 70),
       subjects: Array.isArray(asset && asset.tags) ? asset.tags.slice(0, 4) : []
     }));
-    const system = "You are ReelForge, a concise short-form video creative director. Turn the user's brief and available source-media inventory into an actionable edit plan. Do not claim to generate new footage: plan how to use supplied clips/photos. Output only valid JSON, no markdown. Keys: mood (cinematic|romantic|travel|energetic|motivational|calm), look (clean|cinematic|warm|mono), transition (crossfade|slide|flash|zoom), pace (slow|balanced|fast), title (short string or empty), voiceover (short English narration script or empty if not useful or if user asked for Hindi), clipOrder (array of zero-based clip indexes, each at most once), visualNotes (array of up to 3 short strings), sceneOverlays (array of short on-screen scene labels in original clip index order; leave items empty when no useful label), musicMood (cinematic|romantic|travel|energetic|motivational). Keep voiceover to 1-2 sentences, never invent facts about footage.";
+    const system = "You are ReelForge, a professional short-form video creative director. Understand the user's brief and visual inventory, then return a practical edit plan. Never claim to create source footage; use only supplied clips and photos. Output one valid JSON object only, with no markdown. Keys: mood (cinematic|romantic|travel|energetic|motivational|calm), look (clean|cinematic|warm|mono), transition (crossfade|slide|flash|zoom), pace (slow|balanced|fast), title (short compelling title or empty), voiceover (original 1-3 sentence narration in the user's requested language, or empty when narration would distract), clipOrder (array of source clip indexes in best narrative order, each once), visualNotes (up to 3 concise editing directions), sceneOverlays (short useful labels in source clip order, no invented facts), musicMood (cinematic|romantic|travel|energetic|motivational). Use detected subjects and filenames to create a coherent sequence. For Hindi, write narration and on-screen text in natural Hindi using Devanagari. Avoid generic filler, repetition, invented details and unnecessary narration.";
     const languageHint = language === "hi"
-      ? "The user requested Hindi. Leave voiceover empty; a Hindi fallback script will be used when suitable."
-      : "The user requested English or did not specify another language.";
+      ? "The user requested Hindi. Write title, scene labels and original voiceover in natural Hindi using Devanagari."
+      : "The user requested English. Write title, scene labels and voiceover in natural English.";
     const user = "EDIT BRIEF:\n" + promptText + "\n\nSOURCE MEDIA INVENTORY:\n" + JSON.stringify(context) +
       "\n\nLANGUAGE:\n" + languageHint + "\n\nReturn one JSON object only.";
     const chat = "<|im_start|>system\n" + system + "<|im_end|>\n<|im_start|>user\n" + user + "<|im_end|>\n<|im_start|>assistant\n";
     sayProgress(onProgress, "Planning your edit and narration locally…", 36);
     const result = await director(chat, {
-      max_new_tokens: 220,
+      max_new_tokens: 300,
       do_sample: false,
       return_full_text: false
     });
@@ -574,7 +589,7 @@
       if (!allowed[key].includes(data[key])) delete data[key];
     }
     data.title = String(data.title || "").slice(0, 70);
-    data.voiceover = language === "hi" ? "" : String(data.voiceover || "").slice(0, 450);
+    data.voiceover = String(data.voiceover || "").slice(0, 650);
     data.visualNotes = Array.isArray(data.visualNotes) ? data.visualNotes.map(x => String(x).slice(0, 90)).slice(0, 3) : [];
     data.sceneOverlays = Array.isArray(data.sceneOverlays) ? data.sceneOverlays.map(x => String(x || "").slice(0, 42)).slice(0, context.length) : [];
     const order = Array.isArray(data.clipOrder) ? data.clipOrder.map(Number).filter((n, i, arr) => Number.isInteger(n) && n >= 0 && n < context.length && arr.indexOf(n) === i) : [];
