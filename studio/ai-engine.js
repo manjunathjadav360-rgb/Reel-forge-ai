@@ -169,7 +169,7 @@
   }
 
   async function audioSamples16k(file) {
-    if (file.type && file.type.startsWith("video/")) return audioSamplesFromVideo(file);
+    if ((file.type && file.type.startsWith("video/")) || /\.(mp4|mov|m4v|webm|mkv)$/i.test(file.name || "")) return audioSamplesFromVideo(file);
     try {
       return await audioSamplesFromFile(file);
     } catch (error) {
