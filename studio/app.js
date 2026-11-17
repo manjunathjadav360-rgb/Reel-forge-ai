@@ -380,13 +380,19 @@
     return boundaries;
   }
 
-  function drawCover(ctx, source, width, height, zoom, panX, panY) {
+  function drawCover(ctx, source, width, height, zoom, panX, panY, focus) {
     const sw = source.videoWidth || source.naturalWidth || source.width;
     const sh = source.videoHeight || source.naturalHeight || source.height;
     if (!sw || !sh) return false;
     const scale = Math.max(width / sw, height / sh) * zoom;
     const dw = sw * scale, dh = sh * scale;
-    ctx.drawImage(source, (width - dw) / 2 + width * (panX || 0), (height - dh) / 2 + height * (panY || 0), dw, dh);
+    const fx = focus && Number.isFinite(focus.x) ? focus.x : 0.5;
+    const fy = focus && Number.isFinite(focus.y) ? focus.y : 0.5;
+    let dx = width / 2 - fx * dw + width * (panX || 0);
+    let dy = height / 2 - fy * dh + height * (panY || 0);
+    dx = clamp(dx, Math.min(0, width - dw), Math.max(0, width - dw));
+    dy = clamp(dy, Math.min(0, height - dh), Math.max(0, height - dh));
+    ctx.drawImage(source, dx, dy, dw, dh);
     return true;
   }
 
@@ -571,7 +577,7 @@
       ctx.globalAlpha = alpha;
       if (slideOffset) ctx.translate(width * slideOffset, 0);
       ctx.filter = plan.look === "mono" ? "grayscale(1)" : plan.look === "warm" ? "sepia(.12) saturate(1.15)" : "none";
-      const result = drawCover(ctx, source, width, height, zoom, panX, panY);
+      const result = drawCover(ctx, source, width, height, zoom, panX, panY, asset.subject);
       ctx.restore();
       return result;
     }
@@ -683,9 +689,95 @@
     state.recorder = null;
     return { blob, mimeType: recorder.mimeType || mimeType, duration, width, height };
   }
+  async function sampleAssetForVision(asset) {
+    let source = asset.element;
+    let video = null;
+    if (!asset.image) {
+      video = asset.element;
+      if (video.readyState < 2) {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("Video preview timed out.")), 12000);
+          const done = () => { clearTimeout(timer); video.removeEventListener("loadeddata", done); resolve(); };
+          video.addEventListener("loadeddata", done, { once: true });
+          if (video.readyState >= 2) done();
+        });
+      }
+      const sampleTime = Math.min(Math.max(asset.duration * 0.32, 0.12), Math.max(0.05, asset.duration - 0.08));
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Could not seek to a preview frame.")), 9000);
+        const done = () => { clearTimeout(timer); video.removeEventListener("seeked", done); resolve(); };
+        video.addEventListener("seeked", done, { once: true });
+        try { video.currentTime = sampleTime; } catch (error) { clearTimeout(timer); reject(error); }
+      });
+      source = video;
+    }
+    const sw = asset.image ? source.naturalWidth : source.videoWidth;
+    const sh = asset.image ? source.naturalHeight : source.videoHeight;
+    const maxSide = 640;
+    const scale = Math.min(1, maxSide / Math.max(sw, sh));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sw * scale));
+    canvas.height = Math.max(1, Math.round(sh * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not prepare the smart-framing preview.");
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    if (video) {
+      video.pause();
+      try { video.currentTime = 0; } catch (_) {}
+    }
+    return { data: canvas.toDataURL("image/jpeg", 0.76), width: canvas.width, height: canvas.height };
+  }
+
+  async function analyzeAssets(plan) {
+    state.smartNotes = [];
+    if (!$("autoFrame").checked || !window.ReelForgeAI || !window.ReelForgeAI.analyzeVisual) return;
+    setStatus("Understanding the main subjects in your clips…", 7);
+    let successful = 0;
+    try {
+      for (let index = 0; index < state.assets.length; index++) {
+        const asset = state.assets[index];
+        try {
+          const preview = await sampleAssetForVision(asset);
+          const detections = await window.ReelForgeAI.analyzeVisual(preview.data,
+            (message, percent) => setStatus("Smart framing · " + (index + 1) + "/" + state.assets.length + ": " + message, Math.min(32, 7 + percent * 0.55))
+          );
+          const ranked = detections.map(item => {
+            const box = item.box;
+            const area = Math.max(0, box.xmax - box.xmin) * Math.max(0, box.ymax - box.ymin);
+            const preferred = /person|car|truck|bus|motorcycle|bicycle|dog|cat|horse|bird|boat|train|airplane|surfboard|skateboard/i.test(item.label) ? 1.25 : 1;
+            return { ...item, area, weight: item.score * Math.sqrt(area) * preferred };
+          }).sort((a, b) => b.weight - a.weight);
+          if (ranked.length) {
+            const subject = ranked[0];
+            asset.subject = {
+              x: clamp(((subject.box.xmin + subject.box.xmax) / 2) / preview.width, 0.08, 0.92),
+              y: clamp(((subject.box.ymin + subject.box.ymax) / 2) / preview.height, 0.08, 0.92),
+              label: subject.label,
+              score: subject.score
+            };
+            asset.tags = [...new Set(ranked.slice(0, 4).map(item => item.label))];
+            successful++;
+          }
+        } catch (error) {
+          state.smartNotes.push("Smart framing fallback for " + asset.file.name + ": " + error.message);
+        }
+      }
+    } finally {
+      if (window.ReelForgeAI.releaseVision) await window.ReelForgeAI.releaseVision();
+      state.assets.forEach(asset => { if (!asset.image) { asset.element.pause(); try { asset.element.currentTime = 0; } catch (_) {} } });
+    }
+    if (successful) {
+      const allTags = [...new Set(state.assets.flatMap(asset => asset.tags || []))];
+      plan.visualSummary = allTags.slice(0, 8).join(", ");
+      setStatus("Smart framing ready · " + successful + " scene(s) analysed.", 35);
+    } else {
+      state.smartNotes.push("No main subject was confidently detected. Center framing will be used.");
+    }
+  }
+
   async function prepareProduction(plan) {
     const duration = Number($("duration").value);
-    const production = { voice: null, captions: [], musicBuffer: null, notes: [] };
+    const production = { voice: null, captions: [], musicBuffer: null, notes: [...(state.smartNotes || [])] };
     const narration = narrationFor(plan);
     if (narration) {
       try {
@@ -751,7 +843,7 @@
     if (!state.assets.length || state.rendering) return;
     clearOutput();
     state.rendering = true;
-    const controls = ["mediaFiles","audioFile","editPrompt","duration","quality","autoCaptions","autoMusic","autoVoice","voiceLanguage","voiceGender","narrationText"];
+    const controls = ["mediaFiles","audioFile","editPrompt","duration","quality","autoCaptions","autoMusic","autoVoice","autoFrame","voiceLanguage","voiceGender","narrationText"];
     controls.forEach(id => { const control = $(id); if (control) control.disabled = true; });
     updateReady();
     $("renderPanel").hidden = false;
@@ -762,6 +854,7 @@
     try {
       const plan = parsePrompt();
       if (state.assets.some(a => !a.ready)) throw new Error("One of your files has not finished loading. Please try again.");
+      await analyzeAssets(plan);
       production = await prepareProduction(plan);
       setStatus("Building animated scenes, transitions and effects…", 47);
       const result = await renderEdit(plan, production);
