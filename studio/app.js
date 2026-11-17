@@ -755,6 +755,18 @@
       const panX = direction === 0 ? -0.16 + local * 0.32 : direction === 1 ? 0.15 - local * 0.3 : Math.sin(local * Math.PI) * 0.2;
       const panY = direction === 2 ? -0.15 + local * 0.3 : direction === 3 ? 0.14 - local * 0.28 : Math.cos(local * Math.PI) * 0.07;
       let focus = asset.subject;
+      if (!imageShot && Array.isArray(asset.subjectTrack) && asset.subjectTrack.length) {
+        const sourceLength = Math.max(0.01, (scene.sourceEnd || asset.duration) - (scene.sourceStart || 0));
+        const mediaProgress = clamp(((scene.sourceStart || 0) + local * sourceLength) / Math.max(0.1, asset.duration), 0, 1);
+        const track = asset.subjectTrack;
+        let before = track[0], after = track[track.length - 1];
+        for (let i = 1; i < track.length; i++) {
+          if (track[i].time >= mediaProgress) { before = track[i - 1]; after = track[i]; break; }
+        }
+        const span = Math.max(0.001, after.time - before.time);
+        const mix = clamp((mediaProgress - before.time) / span, 0, 1);
+        focus = { x: before.x + (after.x - before.x) * mix, y: before.y + (after.y - before.y) * mix };
+      }
       if (imageShot && scene.shotCount > 1) {
         const baseX = asset.subject && Number.isFinite(asset.subject.x) ? asset.subject.x : 0.5;
         const baseY = asset.subject && Number.isFinite(asset.subject.y) ? asset.subject.y : 0.5;
@@ -905,7 +917,7 @@
     state.recorder = null;
     return { blob, mimeType: recorder.mimeType || mimeType, duration, width, height };
   }
-  async function sampleAssetForVision(asset) {
+  async function sampleAssetForVision(asset, fraction = 0.32) {
     let source = asset.element;
     let video = null;
     if (!asset.image) {
@@ -918,7 +930,7 @@
           if (video.readyState >= 2) done();
         });
       }
-      const sampleTime = Math.min(Math.max(asset.duration * 0.32, 0.12), Math.max(0.05, asset.duration - 0.08));
+      const sampleTime = Math.min(Math.max(asset.duration * fraction, 0.12), Math.max(0.05, asset.duration - 0.08));
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("Could not seek to a preview frame.")), 9000);
         const done = () => { clearTimeout(timer); video.removeEventListener("seeked", done); resolve(); };
@@ -947,31 +959,46 @@
   async function analyzeAssets(plan) {
     state.smartNotes = [];
     if (!$("autoFrame").checked || !window.ReelForgeAI || !window.ReelForgeAI.analyzeVisual) return;
-    setStatus("Understanding the main subjects in your clips…", 7);
+    setStatus("Understanding your clips and tracking the main subjects…", 7);
     let successful = 0;
     try {
       for (let index = 0; index < state.assets.length; index++) {
         const asset = state.assets[index];
         try {
-          const preview = await sampleAssetForVision(asset);
-          const detections = await window.ReelForgeAI.analyzeVisual(preview.data,
-            (message, percent) => setStatus("Smart framing · " + (index + 1) + "/" + state.assets.length + ": " + message, Math.min(32, 7 + percent * 0.55))
-          );
-          const ranked = detections.map(item => {
-            const box = item.box;
-            const area = Math.max(0, box.xmax - box.xmin) * Math.max(0, box.ymax - box.ymin);
-            const preferred = /person|car|truck|bus|motorcycle|bicycle|dog|cat|horse|bird|boat|train|airplane|surfboard|skateboard/i.test(item.label) ? 1.25 : 1;
-            return { ...item, area, weight: item.score * Math.sqrt(area) * preferred };
-          }).sort((a, b) => b.weight - a.weight);
-          if (ranked.length) {
-            const subject = ranked[0];
-            asset.subject = {
-              x: clamp(((subject.box.xmin + subject.box.xmax) / 2) / preview.width, 0.08, 0.92),
-              y: clamp(((subject.box.ymin + subject.box.ymax) / 2) / preview.height, 0.08, 0.92),
-              label: subject.label,
-              score: subject.score
-            };
-            asset.tags = [...new Set(ranked.slice(0, 4).map(item => item.label))];
+          const fractions = asset.image ? [0.5] : [0.16, 0.5, 0.84];
+          const track = [];
+          let bestTags = [];
+          for (const fraction of fractions) {
+            const preview = await sampleAssetForVision(asset, fraction);
+            const detections = await window.ReelForgeAI.analyzeVisual(preview.data,
+              (message, percent) => setStatus(
+                "Subject tracking · clip " + (index + 1) + "/" + state.assets.length + ": " + message,
+                Math.min(32, 7 + percent * 0.55)
+              )
+            );
+            const ranked = detections.map(item => {
+              const box = item.box;
+              const area = Math.max(0, box.xmax - box.xmin) * Math.max(0, box.ymax - box.ymin);
+              const preferred = /person|car|truck|bus|motorcycle|bicycle|dog|cat|horse|bird|boat|train|airplane|surfboard|skateboard/i.test(item.label) ? 1.25 : 1;
+              return { ...item, area, weight: item.score * Math.sqrt(area) * preferred };
+            }).sort((a, b) => b.weight - a.weight);
+            if (ranked.length) {
+              const subject = ranked[0];
+              track.push({
+                time: fraction,
+                x: clamp(((subject.box.xmin + subject.box.xmax) / 2) / preview.width, 0.08, 0.92),
+                y: clamp(((subject.box.ymin + subject.box.ymax) / 2) / preview.height, 0.08, 0.92),
+                label: subject.label,
+                score: subject.score
+              });
+              if (fraction === 0.5 || !bestTags.length) bestTags = ranked.slice(0, 4).map(item => item.label);
+            }
+          }
+          if (track.length) {
+            asset.subjectTrack = track;
+            const middle = track[Math.floor(track.length / 2)];
+            asset.subject = { x: middle.x, y: middle.y, label: middle.label, score: middle.score };
+            asset.tags = [...new Set(bestTags)];
             successful++;
           }
         } catch (error) {
@@ -985,7 +1012,7 @@
     if (successful) {
       const allTags = [...new Set(state.assets.flatMap(asset => asset.tags || []))];
       plan.visualSummary = allTags.slice(0, 8).join(", ");
-      setStatus("Smart framing ready · " + successful + " scene(s) analysed.", 35);
+      setStatus("Subject tracking ready · " + successful + " clip(s) analysed.", 35);
     } else {
       state.smartNotes.push("No main subject was confidently detected. Center framing will be used.");
     }
@@ -1031,29 +1058,60 @@
           if (!window.ReelForgeAI) throw new Error("The local AI engine did not load.");
           setStatus("Finding spoken dialogue in your source clips…", 12);
           const beats = plan.beatSync && state.audioFile ? await detectBeats(state.audioFile) : (plan.beatTimes || []);
-          const boundaries = createBoundaries(duration, orderedAssets.length, beats, plan.beatSync);
-          for (let index = 0; index < orderedAssets.length; index++) {
-            const asset = orderedAssets[index];
+          const shots = buildShotList(orderedAssets, duration, plan);
+          const boundaries = createBoundaries(duration, shots.length, beats, plan.beatSync);
+          const transcriptCache = new Map();
+          let shotNumber = 0;
+          for (const asset of orderedAssets) {
             if (asset.image) continue;
-            const sceneStart = boundaries[index];
-            const sceneDuration = boundaries[index + 1] - sceneStart;
-            const speed = clamp(asset.duration / sceneDuration, 0.5, 2.5);
+            let transcript;
             try {
-              const transcript = asset === firstTranscriptAsset && firstTranscriptPromise
-                ? await firstTranscriptPromise
-                : await window.ReelForgeAI.transcribe(asset.file,
-                    (message, percent) => setStatus("Clip " + (index + 1) + ": " + message, Math.min(43, 12 + percent * 0.45))
-                  );
-              const timed = captionsFromTranscript(transcript, sceneStart, speed)
-                .map(item => ({ ...item, end: Math.min(boundaries[index + 1], item.end) }))
-                .filter(item => item.end > item.start);
-              production.captions.push(...timed);
+              if (transcriptCache.has(asset)) {
+                transcript = transcriptCache.get(asset);
+              } else {
+                transcript = asset === firstTranscriptAsset && firstTranscriptPromise
+                  ? await firstTranscriptPromise
+                  : await window.ReelForgeAI.transcribe(asset.file,
+                      (message, percent) => setStatus("Listening to " + asset.file.name + ": " + message, Math.min(43, 12 + percent * 0.45))
+                    );
+                transcriptCache.set(asset, transcript);
+              }
             } catch (clipError) {
               production.notes.push("Captions skipped for " + asset.file.name + ": " + clipError.message);
+              continue;
+            }
+            for (let index = 0; index < shots.length; index++) {
+              const shot = shots[index];
+              if (shot.asset !== asset) continue;
+              const sourceStart = shot.sourceStart || 0;
+              const sourceEnd = shot.sourceEnd || asset.duration;
+              const sourceLength = Math.max(0.01, sourceEnd - sourceStart);
+              const sceneDuration = boundaries[index + 1] - boundaries[index];
+              const speed = clamp(sourceLength / sceneDuration, 0.5, 2.5);
+              const selectedChunks = (transcript.chunks || []).filter(chunk => {
+                const start = Number(chunk.start), end = Number(chunk.end);
+                return Number.isFinite(start) && Number.isFinite(end) && end >= sourceStart && start <= sourceEnd;
+              }).map(chunk => ({
+                ...chunk,
+                start: Math.max(sourceStart, Number(chunk.start)),
+                end: Math.min(sourceEnd, Number(chunk.end))
+              }));
+              if (!selectedChunks.length && shot.shotIndex > 0) continue;
+              const sliced = {
+                text: selectedChunks.map(chunk => chunk.text).join(" ").trim() || (shot.shotIndex === 0 ? transcript.text : ""),
+                chunks: selectedChunks,
+                duration: sourceLength
+              };
+              const offset = boundaries[index] - sourceStart / speed;
+              const timed = captionsFromTranscript(sliced, offset, speed)
+                .map(item => ({ ...item, end: Math.min(boundaries[index + 1], item.end) }))
+                .filter(item => item.end > item.start && item.start < boundaries[index + 1]);
+              production.captions.push(...timed);
+              shotNumber++;
             }
           }
           production.captions.sort((a, b) => a.start - b.start);
-          if (!production.captions.length) production.notes.push("No clear speech was detected in your video clips. Your uploaded music is not transcribed as lyrics.");
+          if (!production.captions.length) production.notes.push("No clear speech was detected in your video clips. Uploaded music is never treated as lyrics.");
         } catch (error) {
           production.notes.push("Automatic captions skipped: " + error.message);
         }
