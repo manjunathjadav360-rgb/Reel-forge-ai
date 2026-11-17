@@ -162,12 +162,50 @@
     };
   }
 
+  function orderedAssetsForPlan(plan) {
+    const original = state.assets.slice();
+    const order = Array.isArray(plan && plan.clipOrder) ? plan.clipOrder : [];
+    const selected = order.map(index => original[index]).filter(Boolean);
+    for (const asset of original) if (!selected.includes(asset)) selected.push(asset);
+    return selected;
+  }
+
+  function applyDirectorPlan(plan, director) {
+    if (!director) return;
+    plan.director = director;
+    plan.clipOrder = director.clipOrder;
+    if (director.mood) plan.mood = director.mood;
+    if (director.musicMood) plan.mood = director.musicMood;
+    if (director.look) plan.look = director.look;
+    if (director.transition) plan.transition = director.transition;
+    if (director.title) plan.title = director.title;
+    plan.fast = director.pace === "fast";
+    plan.slow = director.pace === "slow";
+    if (director.visualNotes && director.visualNotes.length) {
+      plan.visualSummary = [plan.visualSummary || "", ...director.visualNotes].filter(Boolean).join(" · ");
+    }
+    const tags = [
+      director.mood && "Mood: " + director.mood,
+      director.look && "Grade: " + director.look,
+      director.transition && "Transition: " + director.transition,
+      director.pace && "Pacing: " + director.pace,
+      director.voiceover && "AI-written voice-over"
+    ].filter(Boolean);
+    if (tags.length) $("planTags").innerHTML += tags.map(tag => "<span>" + safeName(tag) + "</span>").join("");
+    if (director.visualNotes && director.visualNotes.length) {
+      $("planText").textContent += " Creative direction: " + director.visualNotes.join("; ") + ".";
+    }
+  }
+
   function narrationFor(plan) {
     const manual = $("narrationText").value.trim();
     const setting = $("voiceLanguage").value;
     const hindi = setting === "hi" || (setting === "auto" && (/hindi|हिंदी|[ऀ-ॿ]/i.test(plan.prompt)));
     if (manual) return { text: manual, language: hindi || /[ऀ-ॿ]/.test(manual) ? "hi" : "en" };
     if (!$("autoVoice").checked) return null;
+    if (plan.director && plan.director.voiceover) {
+      return { text: plan.director.voiceover, language: "en" };
+    }
     const p = plan.prompt.toLowerCase();
     const romantic = /love|romantic|relationship|emotional story|memory|yaad|प्यार|कहानी/.test(p);
     const travel = /travel|journey|trip|vacation|mountain|beach|safar|सफ़र|यात्रा/.test(p);
@@ -508,7 +546,8 @@
 
     const beats = plan.beatSync ? await detectBeats(state.audioFile) : [];
     const boundaries = createBoundaries(duration, state.assets.length, beats, plan.beatSync);
-    const timeline = state.assets.map((asset, index) => ({
+    const orderedAssets = orderedAssetsForPlan(plan);
+    const timeline = orderedAssets.map((asset, index) => ({
       asset,
       start: boundaries[index],
       end: boundaries[index + 1],
@@ -822,6 +861,7 @@
 
   async function prepareProduction(plan, firstTranscriptPromise = null, firstTranscriptAsset = null) {
     const duration = Number($("duration").value);
+    const orderedAssets = orderedAssetsForPlan(plan);
     const production = { voice: null, captions: [], musicBuffer: null, notes: [...(state.smartNotes || [])] };
     const narration = narrationFor(plan);
     if (narration) {
@@ -840,15 +880,15 @@
       }
     }
     if (!production.voice && $("autoCaptions").checked) {
-      const videoAssets = state.assets.filter(asset => !asset.image);
+      const videoAssets = orderedAssets.filter(asset => !asset.image);
       if (videoAssets.length) {
         try {
           if (!window.ReelForgeAI) throw new Error("The local AI engine did not load.");
           setStatus("Finding spoken dialogue in your source clips…", 12);
           const beats = plan.beatSync && state.audioFile ? await detectBeats(state.audioFile) : [];
-          const boundaries = createBoundaries(duration, state.assets.length, beats, plan.beatSync);
-          for (let index = 0; index < state.assets.length; index++) {
-            const asset = state.assets[index];
+          const boundaries = createBoundaries(duration, orderedAssets.length, beats, plan.beatSync);
+          for (let index = 0; index < orderedAssets.length; index++) {
+            const asset = orderedAssets[index];
             if (asset.image) continue;
             const sceneStart = boundaries[index];
             const sceneDuration = boundaries[index + 1] - sceneStart;
@@ -890,7 +930,7 @@
     if (!state.assets.length || state.rendering) return;
     clearOutput();
     state.rendering = true;
-    const controls = ["mediaFiles","audioFile","editPrompt","duration","quality","autoCaptions","autoMusic","autoVoice","autoFrame","voiceLanguage","voiceGender","narrationText"];
+    const controls = ["mediaFiles","audioFile","editPrompt","duration","quality","autoCaptions","autoMusic","autoVoice","autoFrame","autoDirector","voiceLanguage","voiceGender","narrationText"];
     controls.forEach(id => { const control = $(id); if (control) control.disabled = true; });
     updateReady();
     $("renderPanel").hidden = false;
@@ -917,6 +957,28 @@
         }
       }
       await analyzeAssets(plan);
+      if ($("autoDirector").checked && window.ReelForgeAI && window.ReelForgeAI.planEdit) {
+        try {
+          const inventory = state.assets.map(asset => ({
+            kind: asset.image ? "photo" : "video",
+            name: asset.file.name,
+            tags: asset.tags || []
+          }));
+          const language = $("voiceLanguage").value === "hi" || /[ऀ-ॿ]/.test(plan.prompt) ? "hi" : "en";
+          const director = await window.ReelForgeAI.planEdit(
+            plan.prompt,
+            inventory,
+            language,
+            (message, percent) => setStatus(message, Math.min(46, 34 + percent * 0.16))
+          );
+          applyDirectorPlan(plan, director);
+        } catch (directorError) {
+          console.warn("Local creative director fallback:", directorError);
+          state.smartNotes = [...(state.smartNotes || []), "Creative director fallback: " + directorError.message];
+        } finally {
+          if (window.ReelForgeAI.releaseDirector) await window.ReelForgeAI.releaseDirector();
+        }
+      }
       production = await prepareProduction(plan, firstTranscriptPromise, firstTranscriptAsset);
       setStatus("Building animated scenes, transitions and effects…", 47);
       const result = await renderEdit(plan, production);
