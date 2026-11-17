@@ -123,7 +123,7 @@
 
   function parsePrompt() {
     const prompt = promptInput.value.trim();
-    const durationMatch = prompt.match(/(15|30|45|60)\s*(?:s|sec|secs|seconds)\b/i);
+    const durationMatch = prompt.match(/(10|15|20|30|45|60|90)\s*(?:s|sec|secs|seconds)\b/i);
     if (durationMatch) $("duration").value = durationMatch[1];
     const lower = prompt.toLowerCase();
     const quoteMatch = prompt.match(/["“]([^"”]{2,80})["”]/);
@@ -249,11 +249,12 @@
   function narrationFor(plan) {
     const manual = $("narrationText").value.trim();
     const setting = $("voiceLanguage").value;
-    const hindi = setting === "hi" || (setting === "auto" && (/hindi|हिंदी|[ऀ-ॿ]/i.test(plan.prompt)));
+    const hindi = setting === "hi" || (setting === "auto" && (/hindi|हिंदी|देवनागरी|[ऀ-ॿ]/i.test(plan.prompt)));
     if (manual) return { text: manual, language: hindi || /[ऀ-ॿ]/.test(manual) ? "hi" : "en" };
     if (!$("autoVoice").checked) return null;
     if (plan.director && plan.director.voiceover) {
-      return { text: plan.director.voiceover, language: "en" };
+      const voiceText = plan.director.voiceover;
+      return { text: voiceText, language: /[ऀ-ॿ]/.test(voiceText) ? "hi" : "en" };
     }
     const p = plan.prompt.toLowerCase();
     const romantic = /love|romantic|relationship|emotional story|memory|yaad|प्यार|कहानी/.test(p);
@@ -1132,13 +1133,14 @@
     const button = $("makeMp4Btn");
     button.disabled = true;
     button.textContent = "Preparing MP4 engine…";
+    let ffmpeg = null;
     try {
       setStatus("Loading the free MP4 converter (first use downloads it once)…", 2);
       const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
         import("https://esm.sh/@ffmpeg/ffmpeg@0.12.10"),
         import("https://esm.sh/@ffmpeg/util@0.12.2")
       ]);
-      const ffmpeg = new FFmpeg();
+      ffmpeg = new FFmpeg();
       ffmpeg.on("progress", ({ progress }) => {
         if (Number.isFinite(progress)) setStatus("Converting to Instagram MP4…", Math.min(97, Math.max(5, Math.round(progress * 100))));
       });
@@ -1165,6 +1167,7 @@
       const bytes = await ffmpeg.readFile("reelforge-output.mp4");
       const converted = new Blob([bytes], { type: "video/mp4" });
       await ffmpeg.terminate();
+      ffmpeg = null;
       if (converted.size < 50000) throw new Error("The MP4 converter returned an incomplete file.");
       revoke(state.outputUrl);
       state.outputBlob = converted;
@@ -1182,6 +1185,9 @@
       button.disabled = false;
       button.textContent = "Retry MP4 conversion";
     } finally {
+      if (ffmpeg) {
+        try { await ffmpeg.terminate(); } catch (_) {}
+      }
       state.converting = false;
     }
   }
@@ -1215,7 +1221,7 @@
             name: asset.file.name,
             tags: asset.tags || []
           }));
-          const language = $("voiceLanguage").value === "hi" || /[ऀ-ॿ]/.test(plan.prompt) ? "hi" : "en";
+          const language = $("voiceLanguage").value === "hi" || /hindi|हिंदी|देवनागरी|[ऀ-ॿ]/i.test(plan.prompt) ? "hi" : "en";
           const director = await window.ReelForgeAI.planEdit(
             plan.prompt,
             inventory,
