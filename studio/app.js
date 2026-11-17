@@ -816,6 +816,10 @@
       const scene = timeline[index];
       const local = clamp((t - scene.start) / scene.duration, 0, 1);
 
+      if (!scene.asset.image && scene.asset.element.currentTime >= (scene.sourceEnd || scene.asset.duration) - 0.035) {
+        scene.asset.element.pause();
+      }
+
       if (index !== activeIndex) {
         if (activeIndex >= 0) {
           const previousScene = timeline[activeIndex];
@@ -1122,6 +1126,66 @@
 
     return production;
   }
+  async function convertWebmToMp4() {
+    if (!state.outputBlob || !state.outputBlob.type.includes("webm") || state.converting) return;
+    state.converting = true;
+    const button = $("makeMp4Btn");
+    button.disabled = true;
+    button.textContent = "Preparing MP4 engine…";
+    try {
+      setStatus("Loading the free MP4 converter (first use downloads it once)…", 2);
+      const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
+        import("https://esm.sh/@ffmpeg/ffmpeg@0.12.10"),
+        import("https://esm.sh/@ffmpeg/util@0.12.2")
+      ]);
+      const ffmpeg = new FFmpeg();
+      ffmpeg.on("progress", ({ progress }) => {
+        if (Number.isFinite(progress)) setStatus("Converting to Instagram MP4…", Math.min(97, Math.max(5, Math.round(progress * 100))));
+      });
+      const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+      const [coreURL, wasmURL] = await Promise.all([
+        toBlobURL(base + "/ffmpeg-core.js", "text/javascript"),
+        toBlobURL(base + "/ffmpeg-core.wasm", "application/wasm")
+      ]);
+      await ffmpeg.load({ coreURL, wasmURL });
+      await ffmpeg.writeFile("reelforge-input.webm", new Uint8Array(await state.outputBlob.arrayBuffer()));
+      const duration = Number($("duration").value);
+      await ffmpeg.exec([
+        "-i", "reelforge-input.webm",
+        "-t", String(duration),
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-crf", "24",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "160k",
+        "-movflags", "+faststart",
+        "reelforge-output.mp4"
+      ]);
+      const bytes = await ffmpeg.readFile("reelforge-output.mp4");
+      const converted = new Blob([bytes], { type: "video/mp4" });
+      await ffmpeg.terminate();
+      if (converted.size < 50000) throw new Error("The MP4 converter returned an incomplete file.");
+      revoke(state.outputUrl);
+      state.outputBlob = converted;
+      state.outputUrl = URL.createObjectURL(converted);
+      $("outputVideo").src = state.outputUrl;
+      $("downloadBtn").href = state.outputUrl;
+      $("downloadBtn").download = "reelforge-instagram-" + new Date().toISOString().slice(0,10) + ".mp4";
+      $("outputInfo").textContent = "720/1080 vertical · " + duration + " sec · MP4";
+      $("formatNote").textContent = "Watermark-free H.264 MP4 with AAC audio, ready to upload to Instagram.";
+      button.hidden = true;
+      setStatus("Instagram MP4 is ready.", 100);
+    } catch (error) {
+      console.error("MP4 conversion failed:", error);
+      setStatus("MP4 conversion could not finish on this browser: " + (error.message || error), 0);
+      button.disabled = false;
+      button.textContent = "Retry MP4 conversion";
+    } finally {
+      state.converting = false;
+    }
+  }
+
   async function generate() {
     if (!state.assets.length || state.rendering) return;
     clearOutput();
@@ -1142,16 +1206,7 @@
       }
       const plan = parsePrompt();
       if (state.assets.some(a => !a.ready)) throw new Error("One of your files has not finished loading. Please try again.");
-      let firstTranscriptPromise = null;
-      let firstTranscriptAsset = null;
-      if (!narrationFor(plan) && $("autoCaptions").checked && window.ReelForgeAI) {
-        firstTranscriptAsset = state.assets.find(asset => !asset.image) || null;
-        if (firstTranscriptAsset) {
-          firstTranscriptPromise = window.ReelForgeAI.transcribe(firstTranscriptAsset.file,
-            (message, percent) => setStatus("Preparing dialogue captions: " + message, Math.min(18, 4 + percent * 0.18))
-          );
-        }
-      }
+      // Load one AI model at a time on phones to avoid overlapping GPU/WASM memory peaks.
       await analyzeAssets(plan);
       if ($("autoDirector").checked && window.ReelForgeAI && window.ReelForgeAI.planEdit) {
         try {
@@ -1175,7 +1230,7 @@
           if (window.ReelForgeAI.releaseDirector) await window.ReelForgeAI.releaseDirector();
         }
       }
-      production = await prepareProduction(plan, firstTranscriptPromise, firstTranscriptAsset);
+      production = await prepareProduction(plan, null, null);
       setStatus("Building animated scenes, transitions and effects…", 47);
       const result = await renderEdit(plan, production);
       state.outputBlob = result.blob;
@@ -1198,6 +1253,9 @@
         ? "Watermark-free MP4 export. "
         : "Watermark-free WEBM export. This phone browser does not expose MP4 recording; WEBM may not upload directly to Instagram. ") +
         "Included: " + included + ". " + (production.notes.length ? "Notes: " + production.notes.join(" ") : "");
+      $("makeMp4Btn").hidden = mp4;
+      $("makeMp4Btn").disabled = false;
+      $("makeMp4Btn").textContent = "Finish MP4 for Instagram";
       $("outputWrap").hidden = false;
       $("renderState").textContent = "Ready";
       setStatus("Your edited video is ready.", 100);
@@ -1232,6 +1290,7 @@
   $("duration").addEventListener("change", clearOutput);
   $("quality").addEventListener("change", clearOutput);
   generateBtn.addEventListener("click", generate);
+  $("makeMp4Btn").addEventListener("click", convertWebmToMp4);
   $("shareBtn").addEventListener("click", async () => {
     if (!state.outputBlob) return;
     const extension = state.outputBlob.type.includes("mp4") ? "mp4" : "webm";
