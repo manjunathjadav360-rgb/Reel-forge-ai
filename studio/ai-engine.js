@@ -567,7 +567,7 @@
       name: String(asset && asset.name || "clip " + (index + 1)).slice(0, 70),
       subjects: Array.isArray(asset && asset.tags) ? asset.tags.slice(0, 4) : []
     }));
-    const system = "You are ReelForge, a professional short-form video creative director. Understand the user's brief and visual inventory, then return a practical edit plan. Never claim to create source footage; use only supplied clips and photos. Output one valid JSON object only, with no markdown. Keys: mood (cinematic|romantic|travel|energetic|motivational|calm), look (clean|cinematic|warm|mono), transition (crossfade|slide|flash|zoom), pace (slow|balanced|fast), title (short compelling title or empty), voiceover (original 1-3 sentence narration in the user's requested language, or empty when narration would distract), clipOrder (array of source clip indexes in best narrative order, each once), visualNotes (up to 3 concise editing directions), sceneOverlays (short useful labels in source clip order, no invented facts), musicMood (cinematic|romantic|travel|energetic|motivational). Use detected subjects and filenames to create a coherent sequence. For Hindi, write narration and on-screen text in natural Hindi using Devanagari. Avoid generic filler, repetition, invented details and unnecessary narration.";
+    const system = "You are ReelForge, a professional short-form video creative director and storyboard writer. Understand the user's brief and visual inventory, then return an executable edit plan. Never claim to create real camera footage. If no source media is provided, design original motion-graphic scenes that can be drawn with vector shapes, gradients, particles and typography. Output one valid JSON object only, no markdown. Keys: mood (cinematic|romantic|travel|energetic|motivational|calm), look (clean|cinematic|warm|mono), transition (crossfade|slide|flash|zoom), pace (slow|balanced|fast), title (short compelling title), voiceover (original 1-3 sentence narration in requested language, or empty if narration would distract), clipOrder (source clip indexes in best story order), visualNotes (up to 3 editing directions), sceneOverlays (short useful labels in source clip order), musicMood (cinematic|romantic|travel|energetic|motivational), storyboard (4-8 scene objects, each with title, subtitle, visual and type; type must be one of car|city|travel|ocean|romance|technology|space|business|nature|abstract). Make each scene visually distinct and give the video a clear beginning, development and ending. For prompt-only videos, use storyboard scenes to express the subject rather than generic title cards. Use actual detected subjects when clips are supplied. Never invent details about supplied footage. For Hindi, write title, scene labels, storyboard text and narration in natural Hindi using Devanagari. Avoid generic filler, repeated phrases and unnecessary narration.";
     const languageHint = language === "hi"
       ? "The user requested Hindi. Write title, scene labels and original voiceover in natural Hindi using Devanagari."
       : "The user requested English. Write title, scene labels and voiceover in natural English.";
@@ -576,7 +576,7 @@
     const chat = "<|im_start|>system\n" + system + "<|im_end|>\n<|im_start|>user\n" + user + "<|im_end|>\n<|im_start|>assistant\n";
     sayProgress(onProgress, "Planning your edit and narration locally…", 36);
     const result = await director(chat, {
-      max_new_tokens: 300,
+      max_new_tokens: 460,
       do_sample: false,
       return_full_text: false
     });
@@ -599,6 +599,13 @@
     data.voiceover = String(data.voiceover || "").slice(0, 650);
     data.visualNotes = Array.isArray(data.visualNotes) ? data.visualNotes.map(x => String(x).slice(0, 90)).slice(0, 3) : [];
     data.sceneOverlays = Array.isArray(data.sceneOverlays) ? data.sceneOverlays.map(x => String(x || "").slice(0, 42)).slice(0, context.length) : [];
+    const storyboardTypes = ["car","city","travel","ocean","romance","technology","space","business","nature","abstract"];
+    data.storyboard = Array.isArray(data.storyboard) ? data.storyboard.slice(0, 8).map((scene, index) => ({
+      title: String(scene && scene.title || "Scene " + (index + 1)).slice(0, 64),
+      subtitle: String(scene && scene.subtitle || "").slice(0, 110),
+      visual: String(scene && scene.visual || "").slice(0, 180),
+      type: storyboardTypes.includes(scene && scene.type) ? scene.type : "abstract"
+    })) : [];
     const order = Array.isArray(data.clipOrder) ? data.clipOrder.map(Number).filter((n, i, arr) => Number.isInteger(n) && n >= 0 && n < context.length && arr.indexOf(n) === i) : [];
     data.clipOrder = [...order, ...context.map((_, i) => i).filter(i => !order.includes(i))];
     return data;
