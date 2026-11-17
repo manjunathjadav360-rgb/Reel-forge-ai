@@ -51,7 +51,7 @@
     return asrPromise;
   }
 
-  async function audioSamples16k(file) {
+  async function audioSamplesFromFile(file) {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) throw new Error("This browser cannot decode audio for automatic captions.");
     const context = new AudioCtx({ sampleRate: 16000 });
@@ -63,18 +63,16 @@
       const mono = new Float32Array(targetLength);
       const sourceRate = decoded.sampleRate;
       for (let i = 0; i < targetLength; i++) {
-        const sourcePosition = i * sourceRate / 16000;
-        const left = Math.floor(sourcePosition);
-        const fraction = sourcePosition - left;
+        const position = i * sourceRate / 16000;
+        const left = Math.floor(position);
+        const fraction = position - left;
         let sum = 0;
-        let count = 0;
         for (const channel of channels) {
           const a = channel[Math.min(left, channel.length - 1)] || 0;
           const b = channel[Math.min(left + 1, channel.length - 1)] || 0;
           sum += a + (b - a) * fraction;
-          count++;
         }
-        mono[i] = sum / Math.max(1, count);
+        mono[i] = sum / Math.max(1, channels.length);
       }
       return { samples: mono, duration: decoded.duration };
     } finally {
@@ -82,6 +80,102 @@
     }
   }
 
+  async function audioSamplesFromVideo(file) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) throw new Error("This browser cannot capture video audio for captions.");
+    const context = new AudioCtx();
+    const video = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    video.preload = "auto";
+    video.playsInline = true;
+    video.muted = false;
+    video.volume = 1;
+    video.setAttribute("playsinline", "");
+    video.style.cssText = "position:fixed;left:-10000px;top:0;width:2px;height:2px;opacity:0";
+    document.body.appendChild(video);
+    let processor = null;
+    let source = null;
+    let silence = null;
+    const blocks = [];
+    try {
+      source = context.createMediaElementSource(video);
+      processor = context.createScriptProcessor(4096, 2, 1);
+      silence = context.createGain();
+      silence.gain.value = 0;
+      processor.onaudioprocess = event => {
+        const input = event.inputBuffer;
+        const left = input.getChannelData(0);
+        const right = input.numberOfChannels > 1 ? input.getChannelData(1) : left;
+        const copy = new Float32Array(input.length);
+        for (let i = 0; i < input.length; i++) copy[i] = (left[i] + right[i]) * 0.5;
+        blocks.push(copy);
+      };
+      source.connect(processor);
+      processor.connect(silence);
+      silence.connect(context.destination);
+      video.src = url;
+      video.load();
+      const playback = video.play();
+      await context.resume();
+      await playback;
+      const limit = 120;
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          video.pause();
+          reject(new Error("Video audio capture timed out. Try a shorter clip."));
+        }, 130000);
+        const ended = () => { clearTimeout(timer); resolve(); };
+        const failed = () => { clearTimeout(timer); reject(new Error("The video audio track could not be played.")); };
+        video.addEventListener("ended", ended, { once: true });
+        video.addEventListener("error", failed, { once: true });
+        if (video.duration > limit) {
+          clearTimeout(timer);
+          video.pause();
+          reject(new Error("Automatic captions are limited to video clips under 2 minutes in this phone-first build."));
+        }
+      });
+      const sourceRate = context.sampleRate;
+      const total = blocks.reduce((sum, block) => sum + block.length, 0);
+      if (!total) throw new Error("No audio track was found in this video.");
+      const captured = new Float32Array(total);
+      let offset = 0;
+      for (const block of blocks) { captured.set(block, offset); offset += block.length; }
+      let sumSquares = 0;
+      for (let i = 0; i < captured.length; i += 16) sumSquares += captured[i] * captured[i];
+      const rms = Math.sqrt(sumSquares / Math.max(1, Math.ceil(captured.length / 16)));
+      if (rms < 0.00008) throw new Error("No audible dialogue was found in this video.");
+      const targetLength = Math.max(1, Math.floor(captured.length * 16000 / sourceRate));
+      const mono = new Float32Array(targetLength);
+      for (let i = 0; i < targetLength; i++) {
+        const position = i * sourceRate / 16000;
+        const left = Math.floor(position);
+        const fraction = position - left;
+        const a = captured[Math.min(left, captured.length - 1)] || 0;
+        const b = captured[Math.min(left + 1, captured.length - 1)] || 0;
+        mono[i] = a + (b - a) * fraction;
+      }
+      return { samples: mono, duration: captured.length / sourceRate };
+    } finally {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      if (processor) { processor.onaudioprocess = null; processor.disconnect(); }
+      if (source) source.disconnect();
+      if (silence) silence.disconnect();
+      video.remove();
+      URL.revokeObjectURL(url);
+      await context.close().catch(() => {});
+    }
+  }
+
+  async function audioSamples16k(file) {
+    if (file.type && file.type.startsWith("video/")) return audioSamplesFromVideo(file);
+    try {
+      return await audioSamplesFromFile(file);
+    } catch (error) {
+      throw new Error("Audio decoding failed. Use an MP3/WAV file for external audio or a supported video format for dialogue captions. " + error.message);
+    }
+  }
   async function transcribe(file, onProgress) {
     if (!file) return { text: "", chunks: [], duration: 0 };
     if (file.size > 120 * 1024 * 1024) throw new Error("The audio file is too large for on-device captions. Use a shorter or smaller file.");
