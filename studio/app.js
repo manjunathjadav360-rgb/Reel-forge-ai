@@ -407,7 +407,48 @@
     ctx.restore();
   }
 
-  async function renderEdit(plan) {
+  function scheduleWhoosh(context, destination, time) {
+    const sampleRate = context.sampleRate;
+    const length = Math.ceil(sampleRate * 0.42);
+    const buffer = context.createBuffer(1, length, sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(700, time);
+    filter.frequency.exponentialRampToValueAtTime(4200, time + 0.32);
+    filter.Q.value = 0.65;
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.linearRampToValueAtTime(0.12, time + 0.12);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.4);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(destination);
+    source.start(time);
+    source.stop(time + 0.42);
+  }
+
+  function addAudioBuffer(context, destination, buffer, options) {
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    source.loop = !!options.loop;
+    if (options.playbackRate) source.playbackRate.value = options.playbackRate;
+    gain.gain.setValueAtTime(0.0001, options.start);
+    gain.gain.linearRampToValueAtTime(options.volume, options.start + Math.min(0.16, Math.max(0.04, (options.end - options.start) * 0.08)));
+    if (options.end - options.start > 0.5) gain.gain.setValueAtTime(options.volume, options.end - 0.24);
+    gain.gain.linearRampToValueAtTime(0.0001, options.end);
+    source.connect(gain);
+    gain.connect(destination);
+    source.start(options.start);
+    source.stop(options.end + 0.02);
+    return { source, gain };
+  }
+
+  async function renderEdit(plan, production) {
     const duration = Number($("duration").value);
     const size = Number($("quality").value);
     const width = size === 1080 ? 1080 : 720;
@@ -417,29 +458,87 @@
     canvas.height = height;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("This browser cannot create the video canvas.");
+
     const beats = plan.beatSync ? await detectBeats(state.audioFile) : [];
     const boundaries = createBoundaries(duration, state.assets.length, beats, plan.beatSync);
-    const timeline = state.assets.map((asset, index) => ({ asset, start: boundaries[index], end: boundaries[index + 1], duration: boundaries[index + 1] - boundaries[index] }));
-    const mimeCandidates = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+    const timeline = state.assets.map((asset, index) => ({
+      asset,
+      start: boundaries[index],
+      end: boundaries[index + 1],
+      duration: boundaries[index + 1] - boundaries[index]
+    }));
+    const mimeCandidates = [
+      "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+      "video/mp4",
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm"
+    ];
     const mimeType = mimeCandidates.find(type => window.MediaRecorder && MediaRecorder.isTypeSupported(type));
     if (!mimeType) throw new Error("Your browser does not support video recording. Please try the latest Chrome browser.");
     const stream = canvas.captureStream(30);
-    let audioContext = null, music = null, recorder = null;
-    if (state.audioFile) {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let audioContext = null;
+    let recorder = null;
+    const audioNodes = [];
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+
+    if (AudioCtx) {
       audioContext = new AudioCtx();
       const destination = audioContext.createMediaStreamDestination();
-      music = new Audio(state.audioUrl);
-      music.loop = true;
-      music.preload = "auto";
-      const source = audioContext.createMediaElementSource(music);
-      const gain = audioContext.createGain();
-      gain.gain.value = 0.82;
-      source.connect(gain);
-      gain.connect(destination);
+      const master = audioContext.createGain();
+      master.gain.value = 1;
+      master.connect(destination);
+
+      if (state.audioFile) {
+        setStatus("Preparing your uploaded audio…", 43);
+        try {
+          const inputBuffer = await audioContext.decodeAudioData(await state.audioFile.arrayBuffer());
+          const volume = production.voice ? 0.42 : 0.82;
+          audioNodes.push(addAudioBuffer(audioContext, master, inputBuffer, { start: 0, end: duration, volume, loop: true }));
+        } catch (error) {
+          throw new Error("I could not read the audio file. Try an MP3, M4A or WAV file.");
+        }
+      } else if (production.musicBuffer) {
+        audioNodes.push(addAudioBuffer(audioContext, master, production.musicBuffer, {
+          start: 0, end: duration, volume: production.voice ? 0.34 : 0.58, loop: true
+        }));
+      }
+
+      if (production.voice) {
+        const voiceBuffer = audioContext.createBuffer(1, production.voice.samples.length, production.voice.sampleRate);
+        voiceBuffer.copyToChannel(production.voice.samples, 0);
+        audioNodes.push(addAudioBuffer(audioContext, master, voiceBuffer, {
+          start: 0, end: Math.min(duration, voiceBuffer.duration), volume: 0.96, loop: false
+        }));
+      }
+
+      if (!state.audioFile) {
+        for (let i = 0; i < timeline.length; i++) {
+          const scene = timeline[i];
+          if (scene.asset.image || scene.asset.file.size > 75 * 1024 * 1024) continue;
+          try {
+            const buffer = await audioContext.decodeAudioData(await scene.asset.file.arrayBuffer());
+            if (buffer.duration > 0.15) {
+              const speed = clamp(scene.asset.duration / scene.duration, 0.5, 2.5);
+              audioNodes.push(addAudioBuffer(audioContext, master, buffer, {
+                start: scene.start, end: scene.end, volume: production.musicBuffer ? 0.19 : 0.62,
+                loop: true, playbackRate: speed
+              }));
+            }
+          } catch (error) {
+            console.info("Source clip audio was skipped:", scene.asset.file.name);
+          }
+        }
+      }
+
+      if (plan.whooshes) {
+        for (let i = 1; i < timeline.length; i++) scheduleWhoosh(audioContext, master, Math.max(0, timeline[i].start - 0.18));
+      }
+
       destination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
       await audioContext.resume();
     }
+
     const chunks = [];
     const bitrate = size === 1080 ? 6500000 : 3800000;
     recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: bitrate, audioBitsPerSecond: 160000 });
@@ -449,10 +548,31 @@
       recorder.onerror = () => reject(new Error("The browser stopped recording. Try 720p or a shorter reel."));
       recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType }));
     });
+
+    function paintAsset(asset, scene, local, sceneIndex, alpha, slideOffset) {
+      const source = asset.element;
+      if (!asset.image && source.readyState < 2) return false;
+      const motion = asset.image ? (0.045 + 0.22 * local) : (0.035 + 0.055 * local);
+      const zoom = 1.035 + motion;
+      const direction = sceneIndex % 4;
+      const panX = direction === 0 ? -0.075 + local * 0.15 : direction === 1 ? 0.07 - local * 0.14 : Math.sin(local * Math.PI) * 0.11;
+      const panY = direction === 2 ? -0.08 + local * 0.16 : direction === 3 ? 0.07 - local * 0.14 : Math.cos(local * Math.PI) * 0.035;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      if (slideOffset) ctx.translate(width * slideOffset, 0);
+      ctx.filter = plan.look === "mono" ? "grayscale(1)" : plan.look === "warm" ? "sepia(.12) saturate(1.15)" : "none";
+      const result = drawCover(ctx, source, width, height, zoom, panX, panY);
+      ctx.restore();
+      return result;
+    }
+
     const started = performance.now();
     let activeIndex = -1;
     let animationId = 0;
-    let lastProgress = 0;
+    let lastProgress = -1;
+    const transitionLength = 0.42;
+    let stopped = false;
+
     const draw = (now) => {
       const elapsed = (now - started) / 1000;
       const t = Math.min(duration, elapsed);
@@ -460,6 +580,7 @@
       if (index < 0) index = timeline.length - 1;
       const scene = timeline[index];
       const local = clamp((t - scene.start) / scene.duration, 0, 1);
+
       if (index !== activeIndex) {
         if (activeIndex >= 0 && !timeline[activeIndex].asset.image) timeline[activeIndex].asset.element.pause();
         activeIndex = index;
@@ -471,61 +592,71 @@
           video.play().catch(() => {});
         }
       }
-      ctx.fillStyle = "#08090b";
+
+      ctx.fillStyle = "#07090d";
       ctx.fillRect(0, 0, width, height);
       let drew = false;
-      const source = scene.asset.element;
-      if (scene.asset.image || source.readyState >= 2) {
-        const zoom = scene.asset.image ? 1.02 + 0.06 * local : 1.015;
-        drew = drawCover(ctx, source, width, height, zoom);
+      const transitionProgress = clamp((t - scene.start) / transitionLength, 0, 1);
+      const inTransition = index > 0 && t - scene.start < transitionLength;
+      if (inTransition) {
+        const previous = timeline[index - 1];
+        paintAsset(previous.asset, previous, 1, index - 1, 1 - transitionProgress, 0);
+        if (plan.transition === "slide") {
+          drew = paintAsset(scene.asset, scene, local, index, transitionProgress, 1 - transitionProgress);
+        } else {
+          drew = paintAsset(scene.asset, scene, local, index, transitionProgress, 0);
+        }
+        if (plan.transition === "flash") {
+          ctx.fillStyle = "rgba(255,248,232," + (0.38 * Math.sin(transitionProgress * Math.PI)) + ")";
+          ctx.fillRect(0, 0, width, height);
+        } else if (plan.transition === "zoom") {
+          ctx.fillStyle = "rgba(0,0,0," + (0.22 * (1 - transitionProgress)) + ")";
+          ctx.fillRect(0, 0, width, height);
+        }
+      } else {
+        drew = paintAsset(scene.asset, scene, local, index, 1, 0);
       }
-      if (!drew) {
+      if (!drew && !inTransition) {
         ctx.fillStyle = "#1c2028";
         ctx.fillRect(0, 0, width, height);
       }
+
       if (plan.look === "warm") {
-        ctx.fillStyle = "rgba(186,112,55,.12)";
+        ctx.fillStyle = "rgba(186,112,55,.095)";
         ctx.fillRect(0, 0, width, height);
       } else if (plan.look === "cinematic") {
-        ctx.fillStyle = "rgba(7,12,21,.12)";
+        ctx.fillStyle = "rgba(7,12,21,.09)";
         ctx.fillRect(0, 0, width, height);
-      } else if (plan.look === "mono") {
-        const frame = ctx.getImageData(0, 0, width, height);
-        const pixels = frame.data;
-        for (let p = 0; p < pixels.length; p += 4) {
-          const gray = 0.299 * pixels[p] + 0.587 * pixels[p+1] + 0.114 * pixels[p+2];
-          pixels[p] = pixels[p+1] = pixels[p+2] = gray;
-        }
-        ctx.putImageData(frame, 0, 0);
       }
-      if (plan.fades) {
-        const edge = Math.min(local / 0.08, (1 - local) / 0.08, 1);
+      if (plan.fades && !inTransition) {
+        const edge = Math.min(local / 0.09, (1 - local) / 0.09, 1);
         if (edge < 1) {
-          ctx.fillStyle = "rgba(0,0,0," + (1 - clamp(edge, 0, 1)) + ")";
+          ctx.fillStyle = "rgba(0,0,0," + (1 - clamp(edge, 0, 1)) * 0.68 + ")";
           ctx.fillRect(0, 0, width, height);
         }
       }
+      drawVfx(ctx, width, height, t, plan);
       drawTitle(ctx, width, height, plan.title, t / duration);
-      if (elapsed >= duration) {
+      drawCaptions(ctx, width, height, production.captions, t);
+
+      if (elapsed >= duration && !stopped) {
+        stopped = true;
         if (animationId) cancelAnimationFrame(animationId);
         timeline.forEach(s => { if (!s.asset.image) s.asset.element.pause(); });
-        if (music) music.pause();
         recorder.stop();
-        setStatus("Finishing your file…", 98);
+        setStatus("Finishing your edited video…", 98);
         return;
       }
       const progress = Math.floor(elapsed / duration * 96);
       if (progress !== lastProgress) {
         lastProgress = progress;
-        setStatus("Editing scene " + (index + 1) + " of " + timeline.length + "…", progress);
+        setStatus("Editing scene " + (index + 1) + " of " + timeline.length + " · effects, captions and sound…", 48 + progress * 0.49);
       }
       animationId = requestAnimationFrame(draw);
     };
+
     recorder.start(500);
-    if (music) {
-      music.currentTime = 0;
-      await music.play().catch(() => {});
-    }
+    if (audioContext) await audioContext.resume();
     const first = timeline[0];
     if (!first.asset.image) {
       first.asset.element.currentTime = 0;
@@ -535,11 +666,13 @@
     const blob = await recorded;
     timeline.forEach(s => { if (!s.asset.image) s.asset.element.pause(); });
     stream.getTracks().forEach(track => track.stop());
+    audioNodes.forEach(node => {
+      try { node.source.stop(); } catch (_) {}
+    });
     if (audioContext) await audioContext.close().catch(() => {});
     state.recorder = null;
     return { blob, mimeType: recorder.mimeType || mimeType, duration, width, height };
   }
-
   async function generate() {
     if (!state.assets.length || state.rendering) return;
     clearOutput();
