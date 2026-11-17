@@ -245,46 +245,72 @@
     if (!captions || !captions.length) return;
     const item = captions.find(c => time >= c.start && time <= c.end);
     if (!item) return;
-    const text = item.text.trim();
-    if (!text) return;
+    const words = item.words && item.words.length ? item.words : item.text.trim().split(/\s+/);
+    if (!words.length) return;
+    const span = Math.max(0.12, item.end - item.start);
+    const progress = clamp((time - item.start) / span, 0, 0.999);
+    const activeWord = Math.min(words.length - 1, Math.floor(progress * words.length));
     ctx.save();
-    const fontSize = Math.round(width * 0.045);
+    const fontSize = Math.round(width * 0.044);
     ctx.font = "800 " + fontSize + "px system-ui, sans-serif";
-    ctx.textAlign = "center";
+    ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    const words = text.split(/\s+/);
+    const maxLine = width * 0.78;
     const lines = [];
-    let line = "";
-    for (const word of words) {
-      const trial = line ? line + " " + word : word;
-      if (ctx.measureText(trial).width > width * 0.82 && line) {
+    let line = [];
+    let lineWidth = 0;
+    const gap = fontSize * 0.28;
+    words.forEach((word, index) => {
+      const w = ctx.measureText(word).width;
+      const nextWidth = lineWidth + (line.length ? gap : 0) + w;
+      if (nextWidth > maxLine && line.length) {
         lines.push(line);
-        line = word;
-      } else line = trial;
-    }
-    if (line) lines.push(line);
+        line = [];
+        lineWidth = 0;
+      }
+      line.push({ word, index, width: w });
+      lineWidth += (line.length > 1 ? gap : 0) + w;
+    });
+    if (line.length) lines.push(line);
     const shown = lines.slice(0, 2);
     const lineHeight = fontSize * 1.25;
-    const boxHeight = shown.length * lineHeight + fontSize * 0.9;
+    const boxHeight = shown.length * lineHeight + fontSize * 0.78;
     const boxY = height * 0.79;
-    const boxX = width * 0.07;
-    const boxWidth = width * 0.86;
-    ctx.fillStyle = "rgba(5,7,11,.58)";
+    const boxX = width * 0.055;
+    const boxWidth = width * 0.89;
+    const enter = clamp((time - item.start) / 0.12, 0, 1);
+    ctx.translate(width / 2, boxY + boxHeight / 2);
+    ctx.scale(0.96 + 0.04 * enter, 0.96 + 0.04 * enter);
+    ctx.translate(-width / 2, -(boxY + boxHeight / 2));
+    ctx.fillStyle = "rgba(5,7,11,.68)";
     ctx.beginPath();
-    if (typeof ctx.roundRect === "function") ctx.roundRect(boxX, boxY, boxWidth, boxHeight, fontSize * 0.35);
+    if (typeof ctx.roundRect === "function") ctx.roundRect(boxX, boxY, boxWidth, boxHeight, fontSize * 0.38);
     else ctx.rect(boxX, boxY, boxWidth, boxHeight);
     ctx.fill();
-    ctx.lineWidth = Math.max(2, width * 0.003);
-    ctx.strokeStyle = "rgba(0,0,0,.7)";
-    ctx.fillStyle = "#ffffff";
-    shown.forEach((row, index) => {
-      const y = boxY + fontSize * 0.52 + index * lineHeight + lineHeight * 0.5;
-      ctx.strokeText(row, width / 2, y, boxWidth - 22);
-      ctx.fillText(row, width / 2, y, boxWidth - 22);
+    ctx.fillStyle = "rgba(240,212,176,.9)";
+    ctx.fillRect(width * 0.42, boxY + boxHeight - 3, width * 0.16, 3);
+    shown.forEach((row, rowIndex) => {
+      const totalWidth = row.reduce((sum, item, index) => sum + item.width + (index ? gap : 0), 0);
+      let x = (width - totalWidth) / 2;
+      const y = boxY + fontSize * 0.42 + rowIndex * lineHeight + lineHeight * 0.5;
+      row.forEach(token => {
+        if (token.index === activeWord) {
+          ctx.fillStyle = "rgba(214,181,138,.22)";
+          ctx.beginPath();
+          if (typeof ctx.roundRect === "function") ctx.roundRect(x - 5, y - fontSize * 0.58, token.width + 10, fontSize * 1.12, 6);
+          else ctx.rect(x - 5, y - fontSize * 0.58, token.width + 10, fontSize * 1.12);
+          ctx.fill();
+        }
+        ctx.lineWidth = Math.max(2, width * 0.0026);
+        ctx.strokeStyle = "rgba(0,0,0,.78)";
+        ctx.fillStyle = token.index === activeWord ? "#f0d4b0" : "#ffffff";
+        ctx.strokeText(token.word, x, y, token.width + 2);
+        ctx.fillText(token.word, x, y, token.width + 2);
+        x += token.width + gap;
+      });
     });
     ctx.restore();
   }
-
   function drawVfx(ctx, width, height, time, plan) {
     if (!plan.vfx) return;
     ctx.save();
@@ -397,32 +423,37 @@
   }
 
   function drawTitle(ctx, width, height, title, progress) {
-    if (!title || progress > 0.25) return;
-    const fade = clamp(Math.min(progress / 0.06, (0.25 - progress) / 0.05, 1), 0, 1);
+    if (!title || progress > 0.24) return;
+    const enter = clamp(progress / 0.055, 0, 1);
+    const fade = clamp(Math.min(progress / 0.055, (0.24 - progress) / 0.045, 1), 0, 1);
     ctx.save();
     ctx.globalAlpha = fade;
     const y = height * 0.78;
-    const gradient = ctx.createLinearGradient(0, y - 150, 0, height);
+    const gradient = ctx.createLinearGradient(0, y - 170, 0, height);
     gradient.addColorStop(0, "rgba(0,0,0,0)");
-    gradient.addColorStop(1, "rgba(0,0,0,.65)");
+    gradient.addColorStop(1, "rgba(0,0,0,.72)");
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, y - 150, width, 150);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    ctx.fillRect(0, y - 170, width, 170);
     const maxWidth = width * 0.82;
     let fontSize = Math.round(width * 0.065);
-    ctx.font = "700 " + fontSize + "px system-ui, sans-serif";
+    ctx.font = "800 " + fontSize + "px system-ui, sans-serif";
     while (ctx.measureText(title).width > maxWidth && fontSize > 22) {
       fontSize -= 2;
-      ctx.font = "700 " + fontSize + "px system-ui, sans-serif";
+      ctx.font = "800 " + fontSize + "px system-ui, sans-serif";
     }
-    ctx.shadowColor = "rgba(0,0,0,.6)";
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(title, width / 2, y - 38, maxWidth);
+    ctx.translate(width / 2, y - 38);
+    ctx.scale(0.9 + 0.1 * enter, 0.9 + 0.1 * enter);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,.7)";
+    ctx.shadowBlur = 16;
+    ctx.lineWidth = Math.max(2, width * 0.003);
+    ctx.strokeStyle = "rgba(0,0,0,.72)";
+    ctx.fillStyle = "#f7f4ee";
+    ctx.strokeText(title, 0, 0, maxWidth);
+    ctx.fillText(title, 0, 0, maxWidth);
     ctx.restore();
   }
-
   function scheduleWhoosh(context, destination, time) {
     const sampleRate = context.sampleRate;
     const length = Math.ceil(sampleRate * 0.42);
