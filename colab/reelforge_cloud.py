@@ -210,7 +210,7 @@ def _generate_broll(plan, count):
                 result = pipe(
                     prompt=prompt,
                     negative_prompt="low quality, flicker, distorted faces, text, watermark, artifacts, bad anatomy",
-                    num_frames=24,
+                    num_frames=32,
                     height=512,
                     width=384,
                     num_inference_steps=14,
@@ -565,7 +565,7 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
     ai_entries = []
     for path in ai_paths:
         if Path(path).suffix.lower() in (".jpg", ".jpeg", ".png"):
-            still = ImageClip(path).set_duration(2.7)
+            still = ImageClip(path).set_duration(4.0)
             clip = _vertical(still)
             clip = clip.resize(lambda t: 1.0 + 0.055 * (t / max(0.1, clip.duration)))
         else:
@@ -707,7 +707,7 @@ def _run_pipeline(raw_files, audio_files, prompt, duration):
             except Exception: pass
     plan = _creative_plan(prompt, [Path(p).name for p in raw_files], duration)
     _progress("Generating original AI motion scenes…")
-    ai_count = min(8, max(5, math.ceil(duration / (6 if not raw_files else 12))))
+    ai_count = min(12, max(8, math.ceil(duration / (4 if not raw_files else 12))))
     ai_paths = _generate_broll(plan, ai_count)
     gc.collect()
     torch.cuda.empty_cache()
