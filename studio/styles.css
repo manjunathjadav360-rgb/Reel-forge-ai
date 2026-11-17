@@ -22,3 +22,11 @@
 .convert-btn{width:100%;margin-top:10px;padding:12px 14px;border:1px solid #d6b58a66;border-radius:9px;background:#d6b58a12;color:#f0d4b0;font-size:11px;font-weight:800}
 .convert-btn:disabled{opacity:.5}
 .convert-btn:active{background:#d6b58a28}
+
+.cloud-launch{display:flex;align-items:center;gap:12px;margin-top:18px;padding:13px 14px;border:1px solid #d6b58a58;border-radius:13px;background:linear-gradient(110deg,#d6b58a12,#ffffff04);color:var(--text);text-decoration:none;transition:background .2s,border-color .2s}
+.cloud-launch:active{background:#d6b58a1e;border-color:#d6b58a}
+.cloud-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#d6b58a20;color:var(--accent2);font-size:20px;flex:0 0 auto}
+.cloud-launch>span:nth-child(2){display:grid;gap:2px;flex:1;min-width:0}
+.cloud-launch strong{font-size:12px;font-weight:800}
+.cloud-launch small{font-size:9px;color:var(--muted);line-height:1.4}
+.cloud-arrow{font-size:20px;color:var(--accent2)}
