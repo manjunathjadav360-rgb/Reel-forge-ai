@@ -545,7 +545,7 @@
       name: String(asset && asset.name || "clip " + (index + 1)).slice(0, 70),
       subjects: Array.isArray(asset && asset.tags) ? asset.tags.slice(0, 4) : []
     }));
-    const system = "You are ReelForge, a concise short-form video creative director. Turn the user's brief and available source-media inventory into an actionable edit plan. Do not claim to generate new footage: plan how to use supplied clips/photos. Output only valid JSON, no markdown. Keys: mood (cinematic|romantic|travel|energetic|motivational|calm), look (clean|cinematic|warm|mono), transition (crossfade|slide|flash|zoom), pace (slow|balanced|fast), title (short string or empty), voiceover (short English narration script or empty if not useful or if user asked for Hindi), clipOrder (array of zero-based clip indexes, each at most once), visualNotes (array of up to 3 short strings), musicMood (cinematic|romantic|travel|energetic|motivational). Keep voiceover to 1-2 sentences, never invent facts about footage.";
+    const system = "You are ReelForge, a concise short-form video creative director. Turn the user's brief and available source-media inventory into an actionable edit plan. Do not claim to generate new footage: plan how to use supplied clips/photos. Output only valid JSON, no markdown. Keys: mood (cinematic|romantic|travel|energetic|motivational|calm), look (clean|cinematic|warm|mono), transition (crossfade|slide|flash|zoom), pace (slow|balanced|fast), title (short string or empty), voiceover (short English narration script or empty if not useful or if user asked for Hindi), clipOrder (array of zero-based clip indexes, each at most once), visualNotes (array of up to 3 short strings), sceneOverlays (array of short on-screen scene labels in original clip index order; leave items empty when no useful label), musicMood (cinematic|romantic|travel|energetic|motivational). Keep voiceover to 1-2 sentences, never invent facts about footage.";
     const languageHint = language === "hi"
       ? "The user requested Hindi. Leave voiceover empty; a Hindi fallback script will be used when suitable."
       : "The user requested English or did not specify another language.";
@@ -576,6 +576,7 @@
     data.title = String(data.title || "").slice(0, 70);
     data.voiceover = language === "hi" ? "" : String(data.voiceover || "").slice(0, 450);
     data.visualNotes = Array.isArray(data.visualNotes) ? data.visualNotes.map(x => String(x).slice(0, 90)).slice(0, 3) : [];
+    data.sceneOverlays = Array.isArray(data.sceneOverlays) ? data.sceneOverlays.map(x => String(x || "").slice(0, 42)).slice(0, context.length) : [];
     const order = Array.isArray(data.clipOrder) ? data.clipOrder.map(Number).filter((n, i, arr) => Number.isInteger(n) && n >= 0 && n < context.length && arr.indexOf(n) === i) : [];
     data.clipOrder = [...order, ...context.map((_, i) => i).filter(i => !order.includes(i))];
     return data;
