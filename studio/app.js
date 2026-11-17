@@ -41,7 +41,7 @@
       element.playsInline = true;
       element.preload = "auto";
       element.setAttribute("playsinline", "");
-      element.src = url;
+      element.loop = true;
       hiddenMedia.appendChild(element);
     }
     return new Promise((resolve, reject) => {
@@ -61,6 +61,8 @@
       } else {
         element.onloadedmetadata = done;
         element.onerror = () => { clearTimeout(timer); reject(new Error("This video could not be opened: " + file.name)); };
+        element.src = url;
+        if (element.readyState >= 1 && element.videoWidth) done();
       }
     });
   }
@@ -194,7 +196,7 @@
         }
         point = closest;
       }
-      point = clamp(point, boundaries[boundaries.length - 1] + 1.6, total - (count - i) * 1.6);
+      point = clamp(point, boundaries[boundaries.length - 1] + 0.6, total - (count - i) * 0.6);
       boundaries.push(point);
     }
     boundaries.push(total);
@@ -375,6 +377,11 @@
     if (!state.assets.length || state.rendering) return;
     clearOutput();
     state.rendering = true;
+    mediaInput.disabled = true;
+    audioInput.disabled = true;
+    promptInput.disabled = true;
+    $("duration").disabled = true;
+    $("quality").disabled = true;
     updateReady();
     $("renderPanel").hidden = false;
     $("renderState").textContent = "Working";
@@ -405,6 +412,11 @@
       console.error(error);
     } finally {
       state.rendering = false;
+      mediaInput.disabled = false;
+      audioInput.disabled = false;
+      promptInput.disabled = false;
+      $("duration").disabled = false;
+      $("quality").disabled = false;
       updateReady();
     }
   }
