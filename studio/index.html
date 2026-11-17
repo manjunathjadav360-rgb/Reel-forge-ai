@@ -39,6 +39,18 @@
         <input id="audioFile" type="file" accept="audio/*" hidden>
       </div>
       <div id="audioName" class="audio-name">No audio selected</div>
+      <div class="auto-tools">
+        <label class="tool-toggle"><input id="autoCaptions" type="checkbox" checked><span><b>Automatic captions</b><small>Transcribe speech on your phone using a free local AI model.</small></span></label>
+        <label class="tool-toggle"><input id="autoMusic" type="checkbox" checked><span><b>Original background score</b><small>Create a fresh instrumental track when you do not add audio.</small></span></label>
+        <label class="tool-toggle"><input id="autoVoice" type="checkbox" checked><span><b>Voice-over when suitable</b><small>Add narration for stories, explainers and travel-style edits.</small></span></label>
+      </div>
+      <div class="voice-settings">
+        <label class="mini-field"><span>Voice language</span><select id="voiceLanguage"><option value="auto" selected>Detect from prompt</option><option value="hi">Hindi</option><option value="en">English</option></select></label>
+        <label class="mini-field"><span>Voice style</span><select id="voiceGender"><option value="female" selected>Female voice</option><option value="male">Male voice</option></select></label>
+      </div>
+      <label class="field-label narration-label" for="narrationText">Narration script (optional)</label>
+      <textarea id="narrationText" class="narration-input" rows="2" maxlength="800" placeholder="Leave blank and ReelForge will add a short voice-over only when the prompt suits one."></textarea>
+      <p class="model-note">The speech models are free open-weight downloads. First use needs internet and may download around 100–200 MB. Inference runs in your browser; no API key or paid inference service.</p>
     </section>
 
     <section class="panel prompt-panel">
@@ -85,6 +97,7 @@
 
     <footer>REELFORGE STUDIO <span>Personal build · v0.1</span></footer>
   </main>
+  <script src="ai-engine.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
