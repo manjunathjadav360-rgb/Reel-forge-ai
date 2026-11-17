@@ -262,7 +262,8 @@
     const boxWidth = width * 0.86;
     ctx.fillStyle = "rgba(5,7,11,.58)";
     ctx.beginPath();
-    ctx.roundRect(boxX, boxY, boxWidth, boxHeight, fontSize * 0.35);
+    if (typeof ctx.roundRect === "function") ctx.roundRect(boxX, boxY, boxWidth, boxHeight, fontSize * 0.35);
+    else ctx.rect(boxX, boxY, boxWidth, boxHeight);
     ctx.fill();
     ctx.lineWidth = Math.max(2, width * 0.003);
     ctx.strokeStyle = "rgba(0,0,0,.7)";
