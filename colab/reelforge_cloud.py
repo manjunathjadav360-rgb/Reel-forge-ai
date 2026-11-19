@@ -1129,8 +1129,9 @@ def _verify_final_mp4(path, expected_duration):
     }
 
 def _run_pipeline(raw_files, audio_files, prompt, duration, profile="balanced"):
-    if not torch.cuda.is_available():
-        raise RuntimeError("A free GPU is not attached. Reconnect with an available Colab GPU to generate AI video scenes.")
+    quick_cut = profile == "quick"
+    if not quick_cut and not torch.cuda.is_available():
+        raise RuntimeError("A free GPU is not attached. Choose Quick Cut to edit uploaded footage without AI scene generation, or reconnect with a GPU for Fast AI / Balanced / High detail.")
     if not raw_files and not str(prompt or "").strip():
         raise RuntimeError("Add an editing prompt. You can create a video without uploading any clips.")
     for file in OUTPUT_DIR.glob("*"):
@@ -1140,7 +1141,6 @@ def _run_pipeline(raw_files, audio_files, prompt, duration, profile="balanced"):
             except Exception:
                 pass
 
-    quick_cut = profile == "quick"
     fast_ai = profile == "fast"
     if quick_cut and not raw_files:
         raise RuntimeError(
