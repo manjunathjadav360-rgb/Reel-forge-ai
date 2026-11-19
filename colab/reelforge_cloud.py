@@ -1128,10 +1128,19 @@ def _run_pipeline(raw_files, audio_files, prompt, duration, profile="balanced"):
     plan["source_inventory"] = media_inventory
 
     _progress("Generating original moving AI scenes…")
-    # Wan scenes are 81 frames at 16 fps (about 5 seconds each).
-    # Generate enough distinct shots to cover prompt-only reels without looping a few frames.
+    # Fast preview deliberately uses about half the unique AI scenes. The edit
+    # builds varied alternate cuts from those scenes, so the first review render
+    # is quicker; Balanced and High keep the full scene coverage.
     target_scene_seconds = 5.0 if not raw_files else 10.0
-    ai_count = min(12, max(2, math.ceil(duration / target_scene_seconds)))
+    full_scene_count = min(12, max(2, math.ceil(duration / target_scene_seconds)))
+    ai_count = max(2, math.ceil(full_scene_count / 2)) if profile == "fast" else full_scene_count
+    if profile == "fast":
+        _progress(
+            f"Fast preview: generating {ai_count} of {full_scene_count} unique AI scenes; "
+            "the editor will create varied alternate cuts for the full duration…"
+        )
+    else:
+        _progress(f"Generating {ai_count} original moving AI scenes…")
     ai_paths = _generate_broll(plan, ai_count, profile)
     gc.collect()
     torch.cuda.empty_cache()
