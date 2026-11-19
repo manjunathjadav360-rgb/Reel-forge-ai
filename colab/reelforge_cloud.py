@@ -1305,11 +1305,15 @@ def _start_ui():
                     out = UPLOAD_DIR / f"audio_{_safe_filename(name)}"
                     out.write_bytes(content)
                     audio_paths.append(str(out))
+                selected_profile = profile_box.value
+                if selected_profile == "quick" and not raw_paths:
+                    selected_profile = "fast"
+                    _progress("No source clips uploaded. Switching to Fast AI for prompt-only video generation…")
                 run_button.disabled = True
                 start = time.time()
                 path, plan = _run_pipeline(
                     raw_paths, audio_paths, prompt_box.value.strip(), int(duration_box.value),
-                    profile=profile_box.value
+                    profile=selected_profile
                 )
                 elapsed = int(time.time() - start)
                 _progress(f"Finished in {elapsed//60}m {elapsed%60}s · MP4 ready")
