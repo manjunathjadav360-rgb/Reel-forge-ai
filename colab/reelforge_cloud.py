@@ -1250,7 +1250,7 @@ def _start_ui():
         "<div style='font:13px system-ui;color:#9ca6b6;margin:4px 0 14px'>One prompt · your raw media · original AI scenes · watermark-free MP4</div>"
     )
     prompt_box = widgets.Textarea(
-        value="Make a cinematic 30-second reel from my clips. Choose the strongest moments, add original AI-generated B-roll, smooth transitions, cinematic colour grading, stylish Hindi/English captions when speech is present, a natural voice-over when it suits the story, and an original background score.",
+        value="Make a cinematic 15-second reel from my clips. Choose the strongest moments, add original AI-generated B-roll, smooth transitions, cinematic colour grading, stylish Hindi/English captions when speech is present, a natural voice-over when it suits the story, and an original background score.",
         description="Edit prompt",
         layout=widgets.Layout(width="100%", height="115px")
     )
