@@ -75,6 +75,47 @@ def _progress(text):
         STATUS_WIDGET.value = f"<div style='padding:10px 12px;border-radius:10px;background:#202530;color:#f1e7d9;font:13px/1.5 system-ui'>{safe}</div>"
 
 
+def _ensure_ai_dependencies(profile):
+    """Install only model-runtime packages when an AI render is actually requested."""
+    import importlib.metadata as metadata
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version
+
+    requirements = [
+        ("diffusers", "diffusers>=0.35.1,<0.37", ">=0.35.1,<0.37"),
+        ("transformers", "transformers>=4.49.0,<5", ">=4.49.0,<5"),
+        ("accelerate", "accelerate>=1.1.0", ">=1.1.0"),
+        ("imageio", "imageio[ffmpeg]>=2.34", ">=2.34"),
+        ("safetensors", "safetensors", ""),
+        ("sentencepiece", "sentencepiece", ""),
+        ("huggingface-hub", "huggingface_hub<1.0", "<1.0"),
+        ("ftfy", "ftfy", ""),
+    ]
+    if profile in ("balanced", "high"):
+        requirements.extend([
+            ("kokoro", "kokoro>=0.9.4", ">=0.9.4"),
+            ("faster-whisper", "faster-whisper>=1.1.0", ">=1.1.0"),
+        ])
+
+    to_install = []
+    for distribution, requirement, version_rule in requirements:
+        try:
+            installed = Version(metadata.version(distribution))
+            if version_rule and installed not in SpecifierSet(version_rule):
+                to_install.append(requirement)
+        except metadata.PackageNotFoundError:
+            to_install.append(requirement)
+
+    if to_install:
+        _progress("Preparing the AI render engine: installing only the packages this mode needs…")
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", *to_install],
+            check=True
+        )
+    else:
+        _progress("AI render packages are already ready. Skipping package installation…")
+
+
 def _fallback_plan(prompt, duration):
     hindi = _is_hindi(prompt)
     if hindi:
@@ -1142,6 +1183,8 @@ def _run_pipeline(raw_files, audio_files, prompt, duration, profile="balanced"):
                 pass
 
     fast_ai = profile == "fast"
+    if not quick_cut:
+        _ensure_ai_dependencies(profile)
     if quick_cut and not raw_files:
         raise RuntimeError(
             "Quick Cut needs at least one uploaded video or photo. "
