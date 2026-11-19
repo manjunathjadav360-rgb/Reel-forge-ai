@@ -38,6 +38,21 @@ jobs:
         run: |
           python -m py_compile colab/reelforge_cloud.py
           python -m json.tool colab/ReelForge_One_Prompt_Studio.ipynb > /dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          notebook = json.loads(Path("colab/ReelForge_One_Prompt_Studio.ipynb").read_text())
+          checked = 0
+          for index, cell in enumerate(notebook.get("cells", [])):
+              if cell.get("cell_type") != "code":
+                  continue
+              source = "".join(cell.get("source", []))
+              source_lines = [line for line in source.splitlines() if not line.lstrip().startswith("!")]
+              compile("\\n".join(source_lines), f"notebook-cell-{index}", "exec")
+              checked += 1
+          print(f"Validated {checked} executable Colab code cells")
+          PY
           test -f colab/reelforge_cloud.py
           test -f colab/ReelForge_One_Prompt_Studio.ipynb
       - name: Verify AIKIVO app files and core screens
