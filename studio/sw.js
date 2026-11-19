@@ -1,4 +1,4 @@
-const CACHE_NAME = "reelforge-studio-wan-balanced-render-20261119";
+const CACHE_NAME = "reelforge-fast-preview-scene-budget-20261119";
 const SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./ai-engine.js", "./manifest.webmanifest", "./icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)));
