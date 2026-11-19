@@ -1185,7 +1185,7 @@ def _start_ui():
     duration_box = widgets.Dropdown(options=[15,20,30,45,60], value=30, description="Length")
     profile_box = widgets.Dropdown(
         options=[
-            ("Fast preview · 9 steps", "fast"),
+            ("Fast preview · half the scenes · 9 steps", "fast"),
             ("Balanced · recommended", "balanced"),
             ("High detail · 16 steps", "high")
         ],
