@@ -63,7 +63,7 @@ STATUS_WIDGET = None
 _WAN_PIPELINE = None
 _WAN_PIPELINE_MODE = "not loaded"
 WAN_PROFILES = {
-    "fast": {"frames": 49, "fps": 10, "steps": 9},
+    "fast": {"frames": 33, "fps": 8, "steps": 4},
     "balanced": {"frames": 65, "fps": 13, "steps": 12},
     "high": {"frames": 81, "fps": 16, "steps": 16},
 }
@@ -471,7 +471,7 @@ def _generate_animatediff_scenes(plan, count):
     return paths
 
 
-def _generate_broll(plan, count, profile="balanced"):
+def _generate_broll(plan, count, profile="balanced", allow_animatediff=True):
     global _WAN_PIPELINE, _WAN_PIPELINE_MODE
     try:
         return _generate_wan_scenes(plan, count, profile)
@@ -488,6 +488,11 @@ def _generate_broll(plan, count, profile="balanced"):
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+    if not allow_animatediff:
+        raise RuntimeError(
+            "Fast AI generation could not start on this GPU. To avoid a second slow model download, "
+            "ReelForge stopped here. Choose Quick Cut to render your uploaded footage without AI scene generation."
+        ) from wan_error
     try:
         return _generate_animatediff_scenes(plan, count)
     except Exception as fallback_error:
@@ -672,11 +677,23 @@ def _procedural_music(duration, mood):
     sf.write(str(out), stereo.astype(np.float32), sr)
     return str(out)
 
-def _generate_voice(plan):
+def _generate_voice(plan, quick=False):
     text = str(plan.get("voiceover") or "").strip()
     if not text:
         return None
     out = OUTPUT_DIR / "voiceover.wav"
+    if quick:
+        try:
+            voice = "hi" if _is_hindi(text) else "en-us"
+            subprocess.run(
+                ["espeak-ng", "-v", voice, "-s", "148", "-w", str(out), text],
+                capture_output=True, text=True, check=True, timeout=25
+            )
+            if out.exists() and out.stat().st_size > 2_000:
+                return str(out)
+        except Exception as exc:
+            print("Quick offline voice unavailable:", str(exc)[:200])
+        return None
     try:
         from kokoro import KPipeline
         hindi = _is_hindi(text)
@@ -1008,7 +1025,7 @@ def _assemble(raw_paths, ai_paths, duration, music_path, voice_path, plan):
 
     voice_duration = min(final.duration, float(sf.info(voice_path).duration)) if voice_path else 0.0
     caption_rows = _script_captions(plan.get("voiceover",""), voice_duration) if voice_path else []
-    if not caption_rows:
+    if not caption_rows and not plan.get("skip_source_transcription"):
         caption_rows = _whisper_captions(video_rows)
     for text, start, end in caption_rows:
         start = max(0.0, float(start))
@@ -1123,29 +1140,50 @@ def _run_pipeline(raw_files, audio_files, prompt, duration, profile="balanced"):
             except Exception:
                 pass
 
-    media_inventory = _describe_media(raw_files)
-    plan = _creative_plan(prompt, media_inventory, duration)
-    plan["source_inventory"] = media_inventory
-
-    _progress("Generating original moving AI scenes…")
-    # Fast preview deliberately uses about half the unique AI scenes. The edit
-    # builds varied alternate cuts from those scenes, so the first review render
-    # is quicker; Balanced and High keep the full scene coverage.
-    target_scene_seconds = 5.0 if not raw_files else 10.0
-    full_scene_count = min(12, max(2, math.ceil(duration / target_scene_seconds)))
-    ai_count = max(2, math.ceil(full_scene_count / 2)) if profile == "fast" else full_scene_count
-    if profile == "fast":
-        _progress(
-            f"Fast preview: generating {ai_count} of {full_scene_count} unique AI scenes; "
-            "the editor will create varied alternate cuts for the full duration…"
+    quick_cut = profile == "quick"
+    fast_ai = profile == "fast"
+    if quick_cut and not raw_files:
+        raise RuntimeError(
+            "Quick Cut needs at least one uploaded video or photo. "
+            "Choose Fast AI when you want ReelForge to create scenes from a text prompt."
         )
-    else:
-        _progress(f"Generating {ai_count} original moving AI scenes…")
-    ai_paths = _generate_broll(plan, ai_count, profile)
-    gc.collect()
-    torch.cuda.empty_cache()
 
-    voice_path = _generate_voice(plan)
+    if quick_cut or fast_ai:
+        # Avoid downloading BLIP and the Qwen creative director on the fast paths.
+        # The prompt still controls the fallback director's mood, transitions and voice script.
+        media_inventory = [
+            {"file": Path(path).name,
+             "kind": "photo" if Path(path).suffix.lower() in (".jpg", ".jpeg", ".png", ".webp") else "video"}
+            for path in raw_files
+        ]
+        plan = _fallback_plan(prompt, duration)
+    else:
+        media_inventory = _describe_media(raw_files)
+        plan = _creative_plan(prompt, media_inventory, duration)
+    plan["source_inventory"] = media_inventory
+    plan["skip_source_transcription"] = quick_cut or fast_ai
+
+    if quick_cut:
+        _progress("Quick Cut: editing your original footage directly. No AI scene model is being downloaded…")
+        ai_paths = []
+    else:
+        # Fast AI uses about half the unique scenes and a four-step, short-clip profile.
+        # Balanced and High detail retain their full scene coverage and quality settings.
+        target_scene_seconds = 5.0 if not raw_files else 10.0
+        full_scene_count = min(12, max(2, math.ceil(duration / target_scene_seconds)))
+        ai_count = max(2, math.ceil(full_scene_count / 2)) if fast_ai else full_scene_count
+        if fast_ai:
+            _progress(
+                f"Fast AI: generating {ai_count} short moving scenes at 4 steps each; "
+                "the editor will build the full reel from these shots…"
+            )
+        else:
+            _progress(f"Generating {ai_count} original moving AI scenes…")
+        ai_paths = _generate_broll(plan, ai_count, profile, allow_animatediff=not fast_ai)
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    voice_path = _generate_voice(plan, quick=(quick_cut or fast_ai))
     music_path = _generate_music(plan, duration, audio_files[0] if audio_files else None)
     gc.collect()
     if torch.cuda.is_available():
@@ -1182,14 +1220,15 @@ def _start_ui():
         multiple=False,
         description="Optional music/audio"
     )
-    duration_box = widgets.Dropdown(options=[15,20,30,45,60], value=30, description="Length")
+    duration_box = widgets.Dropdown(options=[15,20,30,45,60], value=15, description="Length")
     profile_box = widgets.Dropdown(
         options=[
-            ("Fast preview · half the scenes · 9 steps", "fast"),
-            ("Balanced · recommended", "balanced"),
+            ("Quick Cut · your footage, no AI download", "quick"),
+            ("Fast AI · 4 steps, shorter scenes", "fast"),
+            ("Balanced · full scene coverage", "balanced"),
             ("High detail · 16 steps", "high")
         ],
-        value="balanced",
+        value="quick",
         description="Render"
     )
     run_button = widgets.Button(
