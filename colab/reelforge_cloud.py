@@ -59,6 +59,15 @@ def _safe_filename(name):
 
 STATUS_WIDGET = None
 
+# Reuse the heavy video pipeline across renders in this Colab session.
+_WAN_PIPELINE = None
+_WAN_PIPELINE_MODE = "not loaded"
+WAN_PROFILES = {
+    "fast": {"frames": 49, "fps": 10, "steps": 9},
+    "balanced": {"frames": 65, "fps": 13, "steps": 12},
+    "high": {"frames": 81, "fps": 16, "steps": 16},
+}
+
 def _progress(text):
     global STATUS_WIDGET
     if STATUS_WIDGET is not None:
@@ -284,47 +293,79 @@ def _scene_prompts(plan, count):
         prompts.append(source + ", " + variation)
     return prompts[:count]
 
-def _generate_wan_scenes(plan, count):
+def _generate_wan_scenes(plan, count, profile="balanced"):
     from diffusers import WanPipeline
     import imageio.v2 as imageio
 
+    global _WAN_PIPELINE, _WAN_PIPELINE_MODE
+    import inspect
+
     prompts = _scene_prompts(plan, count)
+    settings = WAN_PROFILES.get(profile, WAN_PROFILES["balanced"])
+    frame_count, output_fps, inference_steps = settings["frames"], settings["fps"], settings["steps"]
     paths = []
-    pipe = None
+    pipe = _WAN_PIPELINE
     try:
-        _progress("Loading Wan 2.1 open video model. First use downloads the model weights…")
-        pipe = WanPipeline.from_pretrained(
-            "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
-            torch_dtype=torch.float16,
-            use_safetensors=True
-        )
-        pipe.enable_model_cpu_offload()
-        if hasattr(pipe, "enable_vae_slicing"):
-            pipe.enable_vae_slicing()
-        if hasattr(pipe, "enable_vae_tiling"):
-            pipe.enable_vae_tiling()
-        pipe.set_progress_bar_config(disable=True)
+        if pipe is None:
+            _progress("Loading Wan 2.1 video model for this Colab session. First use downloads the weights…")
+            pipe = WanPipeline.from_pretrained(
+                "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+                torch_dtype=torch.float16,
+                use_safetensors=True
+            )
+            # Use the GPU directly when there is room; otherwise keep the safe offload path.
+            free_bytes, _ = torch.cuda.mem_get_info()
+            if free_bytes >= 12 * 1024**3:
+                pipe.to("cuda")
+                _WAN_PIPELINE_MODE = f"GPU resident ({free_bytes / 1024**3:.1f} GB free at load)"
+            else:
+                pipe.enable_model_cpu_offload()
+                _WAN_PIPELINE_MODE = "memory-safe CPU offload"
+            if hasattr(pipe, "enable_vae_slicing"):
+                pipe.enable_vae_slicing()
+            if hasattr(pipe, "enable_vae_tiling"):
+                pipe.enable_vae_tiling()
+            pipe.set_progress_bar_config(disable=False)
+            _WAN_PIPELINE = pipe
+            gc.collect()
+        else:
+            _progress("Reusing the Wan model already loaded in this Colab session…")
+
+        try:
+            callback_supported = "callback_on_step_end" in inspect.signature(pipe.__call__).parameters
+        except (TypeError, ValueError):
+            callback_supported = False
 
         for index, prompt in enumerate(prompts):
             _progress(f"Generating real AI video scene {index + 1} of {len(prompts)} with Wan 2.1…")
+            call_options = {
+                "prompt": prompt,
+                "negative_prompt": (
+                    "still image, frozen frame, slideshow, watermark, subtitles, text, "
+                    "flicker, jitter, deformed faces, malformed hands, low quality, blurry"
+                ),
+                "height": 832,
+                "width": 480,
+                "num_frames": frame_count,
+                "num_inference_steps": inference_steps,
+                "guidance_scale": 5.0,
+                "generator": torch.Generator(device="cuda").manual_seed(2600 + index)
+            }
+            if callback_supported:
+                def show_step_progress(pipeline, step_index, timestep, callback_kwargs):
+                    current = min(step_index + 1, inference_steps)
+                    _progress(
+                        f"AI video scene {index + 1}/{len(prompts)} · diffusion "
+                        f"{current}/{inference_steps} · {profile.title()} mode"
+                    )
+                    return callback_kwargs
+                call_options["callback_on_step_end"] = show_step_progress
             with torch.inference_mode():
-                result = pipe(
-                    prompt=prompt,
-                    negative_prompt=(
-                        "still image, frozen frame, slideshow, watermark, subtitles, text, "
-                        "flicker, jitter, deformed faces, malformed hands, low quality, blurry"
-                    ),
-                    height=832,
-                    width=480,
-                    num_frames=81,
-                    num_inference_steps=16,
-                    guidance_scale=5.0,
-                    generator=torch.Generator(device="cuda").manual_seed(2600 + index)
-                )
+                result = pipe(**call_options)
             frames = result.frames[0]
             out = OUTPUT_DIR / f"wan_scene_{index + 1:02d}.mp4"
             writer = imageio.get_writer(
-                str(out), fps=16, codec="libx264",
+                str(out), fps=output_fps, codec="libx264",
                 pixelformat="yuv420p", macro_block_size=1
             )
             try:
@@ -341,13 +382,16 @@ def _generate_wan_scenes(plan, count):
             paths.append(str(out))
             del result, frames
             gc.collect()
-            torch.cuda.empty_cache()
-    finally:
+    except Exception:
+        # Clear failed or partially initialised weights before the fallback model loads.
+        if _WAN_PIPELINE is pipe:
+            _WAN_PIPELINE = None
         if pipe is not None:
             del pipe
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        raise
     return paths
 
 
@@ -419,12 +463,15 @@ def _generate_animatediff_scenes(plan, count):
     return paths
 
 
-def _generate_broll(plan, count):
+def _generate_broll(plan, count, profile="balanced"):
+    global _WAN_PIPELINE, _WAN_PIPELINE_MODE
     try:
-        return _generate_wan_scenes(plan, count)
+        return _generate_wan_scenes(plan, count, profile)
     except Exception as wan_error:
         wan_message = str(wan_error)[:180]
         print("Wan 2.1 video generation failed:", str(wan_error)[:500])
+        _WAN_PIPELINE = None
+        _WAN_PIPELINE_MODE = "failed; cache cleared"
         for item in OUTPUT_DIR.glob("wan_scene_*.mp4"):
             try:
                 item.unlink()
@@ -1056,7 +1103,7 @@ def _verify_final_mp4(path, expected_duration):
         "size_mb": round(size / (1024 * 1024), 2)
     }
 
-def _run_pipeline(raw_files, audio_files, prompt, duration):
+def _run_pipeline(raw_files, audio_files, prompt, duration, profile="balanced"):
     if not torch.cuda.is_available():
         raise RuntimeError("A free GPU is not attached. Reconnect with an available Colab GPU to generate AI video scenes.")
     if not raw_files and not str(prompt or "").strip():
@@ -1077,7 +1124,7 @@ def _run_pipeline(raw_files, audio_files, prompt, duration):
     # Generate enough distinct shots to cover prompt-only reels without looping a few frames.
     target_scene_seconds = 5.0 if not raw_files else 10.0
     ai_count = min(12, max(2, math.ceil(duration / target_scene_seconds)))
-    ai_paths = _generate_broll(plan, ai_count)
+    ai_paths = _generate_broll(plan, ai_count, profile)
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -1090,6 +1137,8 @@ def _run_pipeline(raw_files, audio_files, prompt, duration):
     final_path = _assemble(raw_files, ai_paths, duration, music_path, voice_path, plan)
     _progress("Verifying the finished MP4, audio track and Instagram-compatible format…")
     plan["export"] = _verify_final_mp4(final_path, duration)
+    plan["render_profile"] = profile
+    plan["wan_pipeline_mode"] = _WAN_PIPELINE_MODE
     plan["generated_video_scenes"] = len(ai_paths)
     plan["voiceover_added"] = bool(voice_path)
     plan["original_transition_sfx_added"] = True
@@ -1117,6 +1166,15 @@ def _start_ui():
         description="Optional music/audio"
     )
     duration_box = widgets.Dropdown(options=[15,20,30,45,60], value=30, description="Length")
+    profile_box = widgets.Dropdown(
+        options=[
+            ("Fast preview · 9 steps", "fast"),
+            ("Balanced · recommended", "balanced"),
+            ("High detail · 16 steps", "high")
+        ],
+        value="balanced",
+        description="Render"
+    )
     run_button = widgets.Button(
         description="Create my video",
         button_style="success",
@@ -1150,12 +1208,13 @@ def _start_ui():
                 run_button.disabled = True
                 start = time.time()
                 path, plan = _run_pipeline(
-                    raw_paths, audio_paths, prompt_box.value.strip(), int(duration_box.value)
+                    raw_paths, audio_paths, prompt_box.value.strip(), int(duration_box.value),
+                    profile=profile_box.value
                 )
                 elapsed = int(time.time() - start)
                 _progress(f"Finished in {elapsed//60}m {elapsed%60}s · MP4 ready")
                 display(Video(path, embed=True, width=300))
-                display(HTML(f"<div style='color:#d8c7ad;font:13px system-ui;margin:8px 0'>Title: {plan.get('title','ReelForge edit')} · Mood: {plan.get('mood','cinematic')}</div>"))
+                display(HTML(f"<div style='color:#d8c7ad;font:13px system-ui;margin:8px 0'>Title: {plan.get('title','ReelForge edit')} · Mood: {plan.get('mood','cinematic')} · Render: {plan.get('render_profile','balanced')}</div>"))
                 export_info = plan.get("export", {})
                 display(HTML(
                     f"<div style='font:12px/1.6 system-ui;color:#a7d8b8'>"
@@ -1177,7 +1236,7 @@ def _start_ui():
     display(upload_box)
     display(widgets.HTML("<b style='color:#d8c7ad;margin-top:8px'>2. Add your own audio (optional)</b>"))
     display(audio_box)
-    display(widgets.HBox([duration_box]))
+    display(widgets.HBox([duration_box, profile_box]))
     display(run_button)
     display(status)
     display(output)
