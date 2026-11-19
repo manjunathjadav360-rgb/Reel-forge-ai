@@ -316,8 +316,16 @@ def _generate_wan_scenes(plan, count, profile="balanced"):
             # Use the GPU directly when there is room; otherwise keep the safe offload path.
             free_bytes, _ = torch.cuda.mem_get_info()
             if free_bytes >= 12 * 1024**3:
-                pipe.to("cuda")
-                _WAN_PIPELINE_MODE = f"GPU resident ({free_bytes / 1024**3:.1f} GB free at load)"
+                try:
+                    pipe.to("cuda")
+                    _WAN_PIPELINE_MODE = f"GPU resident ({free_bytes / 1024**3:.1f} GB free at load)"
+                except RuntimeError as move_error:
+                    if "out of memory" not in str(move_error).lower():
+                        raise
+                    torch.cuda.empty_cache()
+                    pipe.to("cpu")
+                    pipe.enable_model_cpu_offload()
+                    _WAN_PIPELINE_MODE = "CPU offload (GPU memory fallback)"
             else:
                 pipe.enable_model_cpu_offload()
                 _WAN_PIPELINE_MODE = "memory-safe CPU offload"
@@ -1214,7 +1222,7 @@ def _start_ui():
                 elapsed = int(time.time() - start)
                 _progress(f"Finished in {elapsed//60}m {elapsed%60}s · MP4 ready")
                 display(Video(path, embed=True, width=300))
-                display(HTML(f"<div style='color:#d8c7ad;font:13px system-ui;margin:8px 0'>Title: {plan.get('title','ReelForge edit')} · Mood: {plan.get('mood','cinematic')} · Render: {plan.get('render_profile','balanced')}</div>"))
+                display(HTML(f"<div style='color:#d8c7ad;font:13px system-ui;margin:8px 0'>Title: {plan.get('title','ReelForge edit')} · Mood: {plan.get('mood','cinematic')} · Render: {plan.get('render_profile','balanced')} · Engine: {plan.get('wan_pipeline_mode','Wan 2.1')}</div>"))
                 export_info = plan.get("export", {})
                 display(HTML(
                     f"<div style='font:12px/1.6 system-ui;color:#a7d8b8'>"
